@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package rlog_service_protocol;
+
+import "google/protobuf/timestamp.proto";
+
+service LogCollector {
+    // log a new log line!
+    rpc Log(stream LogLine) returns (Empty){}
+}
+
+// The empty structure ;)
+message Empty {
+}
+
+message LogLine {
+    // the hostname of the server producing the log
+    string host=1;
+    // when the log has been produced, in millis from Unix epoch
+    google.protobuf.Timestamp timestamp=2;
+    oneof line {
+        GelfLogLine gelf = 3;
+        SyslogLogLine syslog = 4;
+    }
+}
+
+// a log line from the GELF protocol
+message GelfLogLine {
+    // json encoded GELF payload
+    string payload=1;
+}
+
+// a log line from the syslog protocol
+message SyslogLogLine {
+    reserved 3,4,9;
+    // unix facility (eg. mail, kern, local0)
+    string facility=1;
+    // severity (emerg, alert, crit, err, warning, notice, info, debug)
+    string severity=2;
+    
+    // name of the application
+    string appname=5;
+    // pid 
+    uint64 proc_pid=6;
+    // name of the process
+    string proc_name=7;
+    // message id
+    string msgid=8;
+    //pub structured_data: Vec<StructuredElement<S>>,
+    
+    // message
+    string msg=10;
+}
