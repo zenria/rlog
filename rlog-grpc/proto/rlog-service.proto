@@ -75,7 +75,7 @@ enum SyslogFacility {
     LOG_LOCAL6=22;
     LOG_LOCAL7=23;
 }
-// Severity from RFS 5424
+// Severity from RFC 5424
 enum SyslogSeverity {
     SEV_EMERG=0;
     SEV_ALERT=1;
