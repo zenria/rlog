@@ -3,14 +3,11 @@ syntax = "proto3";
 package rlog_service_protocol;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 service LogCollector {
     // log a new log line!
-    rpc Log(stream LogLine) returns (Empty){}
-}
-
-// The empty structure ;)
-message Empty {
+    rpc Log(stream LogLine) returns (google.protobuf.Empty){}
 }
 
 message LogLine {
