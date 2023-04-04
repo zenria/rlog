@@ -1,0 +1,23 @@
+version: 0.5
+index_id: rlog
+doc_mapping:
+  mode: dynamic
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_secs
+      precision: seconds
+      fast: true
+    - name: hostname
+      type: text
+      tokenizer: raw
+    - name: message
+      type: text
+      tokenizer: raw
+  timestamp_field: timestamp
+
+indexing_settings:
+  commit_timeout_secs: 5  # <--- Your document will be searchable ~5 seconds after you ingest them.
+  

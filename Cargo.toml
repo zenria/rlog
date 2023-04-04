@@ -2,6 +2,8 @@
 
 members = [
     "rlog-grpc",
+    "rlog-shipper",
+    "rlog-helper",
 ]
 
 [profile.release]
