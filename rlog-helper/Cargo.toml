@@ -9,3 +9,5 @@ edition = "2021"
 clap={version="4", features=["derive"]}
 rcgen = {version="0.10.0", features=["pem", "x509-parser"]}
 anyhow="1"
+time="0.3"
+humantime="2.1"
