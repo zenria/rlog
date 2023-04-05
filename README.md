@@ -26,4 +26,21 @@ in [rlog-service.proto](rlog-grpc/proto/rlog-service.proto)
 
 ## rlog-collector
 
-_TODO_
+=> **TODO**
+
+- export to quickvit using OTEL grpc protocol?
+- export to quickvit using custom schema?
+
+## rlog-helper
+
+### mTLS certificates generation
+
+```shell
+# generate a self signed certificate in ./ca directory needed to sign server&client certificates
+rlog-helper cert generate-ca "My certificate authority"
+# generate a server certificate signed by the ca, output is written in ./ca directory
+rlog-helper cert generate-server localhost
+# generate a client certificate signed by the ca, output is written in ./ca directory
+rlog-helper cert generate-server client
+
+```

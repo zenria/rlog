@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::Parser;
 use futures::StreamExt;
+use rlog_common::utils::read_file;
 use rlog_grpc::{
     rlog_service_protocol::{log_collector_server::LogCollectorServer, LogLine},
     tonic::{
@@ -64,10 +65,6 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     Ok(())
-}
-
-fn read_file(path: &str) -> anyhow::Result<Vec<u8>> {
-    std::fs::read(path).with_context(|| format!("Cannot open file {path}"))
 }
 
 struct DummyLogCollectorServer;

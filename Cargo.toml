@@ -2,6 +2,7 @@
 
 members = [
     "rlog-grpc",
+    "rlog-common",
     "rlog-shipper",
     "rlog-helper",
     "rlog-collector",

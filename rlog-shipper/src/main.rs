@@ -3,6 +3,7 @@ use std::{str::FromStr, time::Duration};
 use anyhow::Context;
 use clap::Parser;
 use futures::future;
+use rlog_common::utils::read_file;
 use rlog_grpc::{
     rlog_service_protocol::{
         log_collector_client::LogCollectorClient, log_line::Line, GelfLogLine, LogLine,
@@ -94,8 +95,4 @@ async fn main() -> anyhow::Result<()> {
     client.log(test_request).await?;
 
     Ok(())
-}
-
-fn read_file(path: &str) -> anyhow::Result<Vec<u8>> {
-    std::fs::read(path).with_context(|| format!("Cannot open file {path}"))
 }

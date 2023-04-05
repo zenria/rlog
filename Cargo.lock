@@ -1256,10 +1256,19 @@ dependencies = [
  "clap",
  "dotenv",
  "futures",
+ "rlog-common",
  "rlog-grpc",
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "rlog-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rlog-grpc",
 ]
 
 [[package]]
@@ -1294,6 +1303,7 @@ dependencies = [
  "dotenv",
  "futures",
  "hostname",
+ "rlog-common",
  "rlog-grpc",
  "serde",
  "serde_json",
