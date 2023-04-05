@@ -10,7 +10,14 @@ rlog collects logs locally and ship them to a remote logging destination. Collec
 
 It provides a secure external interface with a minimal attack surface.
 
-Why not use Open Telemetry ecosystem? Yes, you should use it.
+## Open Telemetry?
+
+Why not use Open Telemetry ecosystem and try to do hacky stuff instead?
+
+This software aims to be really easy to deploy on existing stacks (syslog&gelf). It
+is also an experiment used to validate some concepts. (especially quickwit)
+
+While the indexing schema seems bad ;
 
 ## rlog-shipper
 

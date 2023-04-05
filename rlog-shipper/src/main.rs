@@ -3,6 +3,7 @@ use std::{str::FromStr, time::Duration};
 use anyhow::Context;
 use clap::Parser;
 use futures::future;
+use gelf_server::launch_gelf_server;
 use rlog_common::utils::read_file;
 use rlog_grpc::{
     rlog_service_protocol::{
@@ -13,6 +14,9 @@ use rlog_grpc::{
         Request,
     },
 };
+
+mod gelf_server;
+mod shipper;
 
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
@@ -40,7 +44,7 @@ struct Opts {
     #[arg(long, env, default_value = "127.0.0.1:21054")]
     syslog_udp_bind_address: String,
     /// gelf tcp protocol bind address
-    #[arg(long, env, default_value = "127.0.0.1:21055")]
+    #[arg(long, env, default_value = "127.0.0.1:12201")]
     gelf_tcp_bind_address: String,
 }
 
@@ -92,7 +96,6 @@ async fn main() -> anyhow::Result<()> {
         })),
     })));
 
-    client.log(test_request).await?;
-
+    launch_gelf_server(&opts.gelf_tcp_bind_address).await?;
     Ok(())
 }
