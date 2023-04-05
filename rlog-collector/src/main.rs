@@ -36,7 +36,9 @@ async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
 
     let mut server = Server::builder()
+        // always setup tcp keepalive
         .tcp_keepalive(Some(Duration::from_secs(25)))
+        // tls config
         .tls_config(
             ServerTlsConfig::new()
                 .identity(Identity::from_pem(
