@@ -10,6 +10,8 @@ rlog collects logs locally and ship them to a remote logging destination. Collec
 
 It provides a secure external interface with a minimal attack surface.
 
+Why not use Open Telemetry ecosystem? Yes, you should use it.
+
 ## rlog-shipper
 
 rlog-shipper collects logs locally and sends them to a remote log collector.

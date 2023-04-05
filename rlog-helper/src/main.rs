@@ -77,7 +77,7 @@ impl CertificateCommand {
                 params
                     .distinguished_name
                     .push(DnType::CommonName, common_name);
-                params.alg = &rcgen::PKCS_ED25519;
+                params.alg = &rcgen::PKCS_ECDSA_P384_SHA384;
 
                 if let Some(country) = country {
                     params.distinguished_name.push(DnType::CountryName, country);
@@ -129,10 +129,14 @@ impl CertificateCommand {
                 let ca_certificate =
                     parse_ca_certificate(&output_dir).context("Unable to load CA certificates")?;
 
-                let mut params = CertificateParams::new(alt_dns_hostname.as_slice());
+                let mut subject_alt_name = Vec::new();
+                subject_alt_name.push(hostname.clone());
+                subject_alt_name.extend(alt_dns_hostname.iter().cloned());
+
+                let mut params = CertificateParams::new(subject_alt_name);
                 params.distinguished_name = DistinguishedName::new();
                 params.distinguished_name.push(DnType::CommonName, hostname);
-                params.alg = &rcgen::PKCS_ED25519;
+                params.alg = &rcgen::PKCS_ECDSA_P384_SHA384;
 
                 let cert = Certificate::from_params(params)?;
                 {
@@ -163,7 +167,7 @@ impl CertificateCommand {
                 params
                     .distinguished_name
                     .push(DnType::CommonName, client_name);
-                params.alg = &rcgen::PKCS_ED25519;
+                params.alg = &rcgen::PKCS_ECDSA_P384_SHA384;
 
                 let cert = Certificate::from_params(params)?;
                 {
