@@ -11,9 +11,9 @@ service LogCollector {
 }
 
 message LogLine {
-    // the hostname of the server producing the log
+    // the hostname of the server producing the log. 
     string host=1;
-    // when the log has been produced, in millis from Unix epoch
+    // when the log has been produced
     google.protobuf.Timestamp timestamp=2;
     oneof line {
         GelfLogLine gelf = 3;

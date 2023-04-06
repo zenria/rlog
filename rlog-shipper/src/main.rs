@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::Parser;
 use futures::future;
 use gelf_server::launch_gelf_server;
-use rlog_common::utils::read_file;
+use rlog_common::utils::{init_logging, read_file};
 use rlog_grpc::{
     rlog_service_protocol::{
         log_collector_client::LogCollectorClient, log_line::Line, GelfLogLine, LogLine,
@@ -78,6 +78,8 @@ async fn main() -> anyhow::Result<()> {
         Ok::<_, anyhow::Error>(client_tls_config)
     }?)
     .context("Invalid TLS configuration")?;
+
+    init_logging();
 
     let channel = endpoint
         .connect()

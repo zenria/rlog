@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 rlog-grpc = {path = "../rlog-grpc"}
 anyhow="1"
+atty="0.2"
+tracing-subscriber = {version="0.3", features=["env-filter"]}
+tracing="0.1"
