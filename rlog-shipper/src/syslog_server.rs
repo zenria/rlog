@@ -14,8 +14,14 @@ pub async fn launch_syslog_udp_server(
         .await
         .context("Unable to listen to syslog UDP bind address")?;
 
+    tracing::info!("Syslog server listening UDP {bind_address}");
+
     tokio::spawn(async move {
-        let mut buf = [0u8; 4096];
+        // An udp packet cannot be larger than 65507 bytes.
+        // Note: RFC 5424 requires the receiver should be able to handle
+        // a minimum of 2048 bytes but we can afford to handle a bit more
+        // bytes ;)
+        let mut buf = [0u8; 65507];
         loop {
             let (n, from) = match socket.recv_from(&mut buf).await {
                 Ok(r) => r,
@@ -25,11 +31,17 @@ pub async fn launch_syslog_udp_server(
                     continue;
                 }
             };
+            let from = from.to_string();
+            let span = tracing::info_span!("syslog_in", remote_addr = from);
+            let _entered = span.enter();
 
             let datagram = &buf[0..n];
             let message = String::from_utf8_lossy(datagram);
+            tracing::debug!("Received {}", message);
             let message = syslog_loose::parse_message(&message);
             let message: Message<String> = message.into();
+            tracing::debug!("Decoded {}", message);
+
             if let Err(e) = sender.try_send(message) {
                 match e {
                     TrySendError::Full(value) => {
