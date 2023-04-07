@@ -3,7 +3,7 @@ version: 0.5
 index_id: rlog
 
 doc_mapping:
-  mode: strict
+  mode: dynamic
   field_mappings:
     - name: timestamp_secs
       type: datetime
@@ -11,7 +11,7 @@ doc_mapping:
       indexed: false
       fast: true
       precision: seconds
-      stored: false
+      stored: true
     - name: timestamp_nanos
       type: u64
       indexed: false
@@ -23,14 +23,14 @@ doc_mapping:
       tokenizer: raw
     - name: severity_text
       type: text
-      tokenizer: raw
+      tokenizer: default
     - name: severity_number
       type: u64
     - name: body
       type: json
     - name: message
       type: text
-      tokenizer: raw
+      tokenizer: default
 
   timestamp_field: timestamp_secs
 

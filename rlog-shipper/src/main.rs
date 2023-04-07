@@ -2,21 +2,19 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
-use futures::future;
 use gelf_server::launch_gelf_server;
-use rlog_common::utils::{init_logging, read_file};
+use rlog_common::utils::{format_error, init_logging, read_file};
 use rlog_grpc::{
-    rlog_service_protocol::{
-        log_collector_client::LogCollectorClient, log_line::Line, GelfLogLine, LogLine,
-    },
-    tonic::{
-        transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri},
-        Request,
-    },
+    rlog_service_protocol::LogLine,
+    tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri},
 };
+use shipper::launch_grpc_shipper;
+use syslog_server::launch_syslog_udp_server;
+use tracing::Instrument;
 
 mod gelf_server;
 mod shipper;
+mod syslog_server;
 
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
@@ -81,23 +79,33 @@ async fn main() -> anyhow::Result<()> {
 
     init_logging();
 
-    let channel = endpoint
-        .connect()
-        .await
-        .context("Unable to connect to gRPC endpoint")?;
+    let mut gelf_receiver = launch_gelf_server(&opts.gelf_tcp_bind_address).await?;
 
-    let mut client = LogCollectorClient::new(channel);
+    let mut syslog_receiver = launch_syslog_udp_server(&opts.syslog_udp_bind_address).await?;
 
-    // let's send a test request
+    let grpc_log_line_sender = launch_grpc_shipper(endpoint);
 
-    let test_request = Request::new(futures::stream::once(future::ready(LogLine {
-        host: hostname::get()?.to_string_lossy().to_string(),
-        timestamp: None,
-        line: Some(Line::Gelf(GelfLogLine {
-            payload: "coucou les amis".to_string(),
-        })),
-    })));
+    async move {
+        while let Some(gelf_log) = gelf_receiver.recv().await {
+            // construct a valid LogLine from gelf stuff
+            let log_line = match LogLine::try_from(gelf_log) {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!("received an invalid GELF log! {}", format_error(e));
+                    continue;
+                }
+            };
+            // if the channel is full, is will block here ; filling channels from each
+            // server (syslog & gelf), when those channel will be full, new messages will be discarded
+            if let Err(e) = grpc_log_line_sender.send(log_line).await {
+                tracing::error!("Channel closed! {e}");
+                break;
+            }
+        }
+        tracing::error!("log_forward_loop exited!");
+    }
+    .instrument(tracing::info_span!("log_forward_loop"))
+    .await;
 
-    launch_gelf_server(&opts.gelf_tcp_bind_address).await?;
     Ok(())
 }

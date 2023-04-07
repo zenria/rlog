@@ -24,3 +24,12 @@ pub fn init_logging() {
         .finish()
         .init();
 }
+
+pub fn format_error(error: anyhow::Error) -> String {
+    error
+        .chain()
+        .enumerate()
+        .map(|(i, e)| format!("{i} {e}"))
+        .collect::<Vec<_>>()
+        .join("\nCaused by:\n    ")
+}

@@ -2,15 +2,15 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
-use futures::StreamExt;
-use rlog_common::utils::read_file;
+use rlog_common::utils::{init_logging, read_file};
 use rlog_grpc::{
-    rlog_service_protocol::{log_collector_server::LogCollectorServer, LogLine},
-    tonic::{
-        self,
-        transport::{Certificate, Identity, Server, ServerTlsConfig},
-    },
+    rlog_service_protocol::log_collector_server::LogCollectorServer,
+    tonic::transport::{Certificate, Identity, Server, ServerTlsConfig},
 };
+
+use crate::index::IndexLogCollectorServer;
+
+mod index;
 
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
@@ -27,6 +27,12 @@ struct Opts {
 
     #[arg(long, env)]
     grpc_bind_address: String,
+
+    #[arg(long, env, default_value = "http://127.0.0.1:7280")]
+    quickwit_rest_url: String,
+
+    #[arg(long, env, default_value = "rlog")]
+    quickwit_index_id: String,
 }
 
 #[tokio::main]
@@ -35,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("WARN: unable to setup dotenv (.env files): {e}");
     };
     let opts = Opts::parse();
+
+    init_logging();
 
     let mut server = Server::builder()
         // always setup tcp keepalive
@@ -57,32 +65,15 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .context("Invalid grpc bind address")?;
 
-    println!("Starting rlog-collector gRPC server at {addr}");
+    tracing::info!("Starting rlog-collector gRPC server at {addr}");
 
     server
-        .add_service(LogCollectorServer::new(DummyLogCollectorServer))
+        .add_service(LogCollectorServer::new(IndexLogCollectorServer::new(
+            &opts.quickwit_rest_url,
+            &opts.quickwit_index_id,
+        )?))
         .serve(addr)
         .await?;
 
     Ok(())
-}
-
-struct DummyLogCollectorServer;
-
-#[tonic::async_trait]
-impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
-    for DummyLogCollectorServer
-{
-    async fn log(
-        &self,
-        request: tonic::Request<tonic::Streaming<LogLine>>,
-    ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
-        let mut request_stream = request.into_inner();
-
-        while let Some(log_line) = request_stream.next().await {
-            let log_line = log_line?;
-            println!("{log_line:?}");
-        }
-        Ok(tonic::Response::new(()))
-    }
 }

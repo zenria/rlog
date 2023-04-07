@@ -7,7 +7,7 @@ import "google/protobuf/empty.proto";
 
 service LogCollector {
     // log a new log line!
-    rpc Log(stream LogLine) returns (google.protobuf.Empty){}
+    rpc Log(LogLine) returns (google.protobuf.Empty){}
 }
 
 message LogLine {
@@ -15,16 +15,25 @@ message LogLine {
     string host=1;
     // when the log has been produced
     google.protobuf.Timestamp timestamp=2;
+
     oneof line {
-        GelfLogLine gelf = 3;
-        SyslogLogLine syslog = 4;
+        GelfLogLine gelf = 4;
+        SyslogLogLine syslog = 5;
     }
 }
 
 // a log line from the GELF protocol
 message GelfLogLine {
-    // json encoded GELF payload
-    string payload=1;
+    string short_message = 2;
+
+    optional string full_message = 3;
+
+    // mapped from "level"
+    SyslogSeverity severity = 4;
+
+    // extra fields with _ removed, encoded in json
+    string extra = 5;
+
 }
 
 // a log line from the syslog protocol
@@ -77,12 +86,13 @@ enum SyslogFacility {
 }
 // Severity from RFC 5424
 enum SyslogSeverity {
-    SEV_EMERG=0;
-    SEV_ALERT=1;
-    SEV_CRIT=2;
-    SEV_ERR=3;
-    SEV_WARNING=4;
-    SEV_NOTICE=5;
-    SEV_INFO=6;
-    SEV_DEBUG=7;
+    EMERGENCY=0;
+    ALERT=1;
+    CRITICAL=2;
+    ERROR=3;
+    WARNING=4;
+    NOTICE=5;
+    INFO=6;
+    DEBUG=7;
 }
+
