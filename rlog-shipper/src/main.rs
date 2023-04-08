@@ -10,6 +10,7 @@ use rlog_grpc::{
 };
 use shipper::launch_grpc_shipper;
 use syslog_server::launch_syslog_udp_server;
+use tokio::select;
 use tracing::Instrument;
 
 mod gelf_server;
@@ -86,20 +87,43 @@ async fn main() -> anyhow::Result<()> {
     let grpc_log_line_sender = launch_grpc_shipper(endpoint);
 
     async move {
-        while let Some(gelf_log) = gelf_receiver.recv().await {
-            // construct a valid LogLine from gelf stuff
-            let log_line = match LogLine::try_from(gelf_log) {
-                Ok(l) => l,
-                Err(e) => {
-                    tracing::error!("received an invalid GELF log! {}", format_error(e));
-                    continue;
+        loop {
+            select! {
+                gelf_log = gelf_receiver.recv() => {
+                    match gelf_log {
+                        Some(gelf_log)=>{
+                            // construct a valid LogLine from gelf stuff
+                            let log_line = match LogLine::try_from(gelf_log) {
+                                Ok(l) => l,
+                                Err(e) => {
+                                    tracing::error!("received an invalid GELF log! {}", format_error(e));
+                                    continue;
+                                }
+                            };
+                            // if the channel is full, is will block here ; filling channels from each
+                            // server (syslog & gelf), when those channel will be full, new messages will be discarded
+                            if let Err(e) = grpc_log_line_sender.send(log_line).await {
+                                tracing::error!("Channel closed! {e}");
+                                break;
+                            }
+                        },
+                        None => {
+                            tracing::error!("Syslog channel closed!");
+                            break;
+                        }
+                    }
                 }
-            };
-            // if the channel is full, is will block here ; filling channels from each
-            // server (syslog & gelf), when those channel will be full, new messages will be discarded
-            if let Err(e) = grpc_log_line_sender.send(log_line).await {
-                tracing::error!("Channel closed! {e}");
-                break;
+                syslog = syslog_receiver.recv() => {
+                    match syslog {
+                        Some(syslog)=>{
+                            tracing::warn!("TODO: handle syslog logs!!! {syslog}");
+                        },
+                        None => {
+                            tracing::error!("Syslog channel closed!");
+                            break;
+                        }
+                    }
+                }
             }
         }
         tracing::error!("log_forward_loop exited!");
