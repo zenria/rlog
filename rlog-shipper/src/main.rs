@@ -116,7 +116,20 @@ async fn main() -> anyhow::Result<()> {
                 syslog = syslog_receiver.recv() => {
                     match syslog {
                         Some(syslog)=>{
-                            tracing::warn!("TODO: handle syslog logs!!! {syslog}");
+                            // construct a valid LogLine from gelf stuff
+                            let log_line = match LogLine::try_from(syslog) {
+                                Ok(l) => l,
+                                Err(e) => {
+                                    tracing::error!("received an invalid Syslog log! {}", format_error(e));
+                                    continue;
+                                }
+                            };
+                            // if the channel is full, is will block here ; filling channels from each
+                            // server (syslog & gelf), when those channel will be full, new messages will be discarded
+                            if let Err(e) = grpc_log_line_sender.send(log_line).await {
+                                tracing::error!("Channel closed! {e}");
+                                break;
+                            }
                         },
                         None => {
                             tracing::error!("Syslog channel closed!");

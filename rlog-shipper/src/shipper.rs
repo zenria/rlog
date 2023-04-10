@@ -24,6 +24,7 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
                 let mut client = LogCollectorClient::new(channel);
 
                 while let Some(log_line) = receiver.recv().await {
+                    tracing::debug!("Will ship {log_line:#?}");
                     // do something
                     let request = Request::new(log_line);
                     let response: Result<Response<()>, Status> = client.log(request).await;

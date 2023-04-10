@@ -45,13 +45,13 @@ message SyslogLogLine {
     SyslogSeverity severity=2;
     
     // name of the application
-    string appname=5;
+    optional string appname=5;
     // pid 
-    uint64 proc_pid=6;
+    optional int32 proc_pid=6;
     // name of the process
-    string proc_name=7;
+    optional string proc_name=7;
     // message id
-    string msgid=8;
+    optional string msgid=8;
     //pub structured_data: Vec<StructuredElement<S>>,
     
     // message

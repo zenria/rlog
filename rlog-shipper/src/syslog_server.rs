@@ -1,13 +1,24 @@
-use anyhow::Context;
+use std::fmt::Display;
+
+use anyhow::{anyhow, Context};
+use rlog_grpc::rlog_service_protocol::{
+    log_line::Line, LogLine, SyslogFacility, SyslogLogLine, SyslogSeverity,
+};
 use syslog_loose::Message;
 use tokio::{
     net::UdpSocket,
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
 
-pub async fn launch_syslog_udp_server(
-    bind_address: &str,
-) -> anyhow::Result<Receiver<syslog_loose::Message<String>>> {
+pub struct SyslogLog(Message<String>);
+
+impl Display for SyslogLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Receiver<SyslogLog>> {
     let (sender, receiver) = channel(10_000);
 
     let socket = UdpSocket::bind(&bind_address)
@@ -42,7 +53,7 @@ pub async fn launch_syslog_udp_server(
             let message: Message<String> = message.into();
             tracing::debug!("Decoded {}", message);
 
-            if let Err(e) = sender.try_send(message) {
+            if let Err(e) = sender.try_send(SyslogLog(message)) {
                 match e {
                     TrySendError::Full(value) => {
                         tracing::error!("Send buffer full: discarding value {}", value);
@@ -58,4 +69,95 @@ pub async fn launch_syslog_udp_server(
     });
 
     Ok(receiver)
+}
+
+impl TryFrom<SyslogLog> for LogLine {
+    type Error = anyhow::Error;
+
+    fn try_from(value: SyslogLog) -> Result<Self, Self::Error> {
+        let value = value.0;
+        let hostname = value
+            .hostname
+            .ok_or(anyhow::anyhow!("No hostname in syslog"))?;
+
+        let timestamp = value.timestamp.ok_or(anyhow!("No timestamp in syslog"))?;
+
+        let timestamp_secs = timestamp.timestamp();
+        let nanos = timestamp.timestamp_subsec_nanos();
+
+        let message = value.msg;
+
+        let severity = value.severity.ok_or(anyhow!("No severity in syslog"))?;
+
+        let (proc_pid, proc_name) = value
+            .procid
+            .map(|procid| match procid {
+                syslog_loose::ProcId::PID(pid) => (Some(pid), None),
+                syslog_loose::ProcId::Name(name) => (None, Some(name)),
+            })
+            .unwrap_or((None, None));
+
+        Ok(LogLine {
+            host: hostname,
+            timestamp: Some(rlog_grpc::prost_wkt_types::Timestamp {
+                seconds: timestamp_secs,
+                nanos: nanos as i32,
+            }),
+            line: Some(Line::Syslog(SyslogLogLine {
+                facility: value
+                    .facility
+                    .map(to_grpc_facility)
+                    .unwrap_or(SyslogFacility::LogLocal0) as i32,
+                severity: to_grpc_severity(severity) as i32,
+                appname: value.appname,
+                proc_pid,
+                proc_name,
+                msgid: value.msgid,
+                msg: message,
+            })),
+        })
+    }
+}
+
+fn to_grpc_facility(facility: syslog_loose::SyslogFacility) -> SyslogFacility {
+    match facility {
+        syslog_loose::SyslogFacility::LOG_KERN => SyslogFacility::LogKern,
+        syslog_loose::SyslogFacility::LOG_USER => SyslogFacility::LogUser,
+        syslog_loose::SyslogFacility::LOG_MAIL => SyslogFacility::LogMail,
+        syslog_loose::SyslogFacility::LOG_DAEMON => SyslogFacility::LogDaemon,
+        syslog_loose::SyslogFacility::LOG_AUTH => SyslogFacility::LogAuth,
+        syslog_loose::SyslogFacility::LOG_SYSLOG => SyslogFacility::LogSyslog,
+        syslog_loose::SyslogFacility::LOG_LPR => SyslogFacility::LogLpr,
+        syslog_loose::SyslogFacility::LOG_NEWS => SyslogFacility::LogNews,
+        syslog_loose::SyslogFacility::LOG_UUCP => SyslogFacility::LogUucp,
+        syslog_loose::SyslogFacility::LOG_CRON => SyslogFacility::LogCron,
+        syslog_loose::SyslogFacility::LOG_AUTHPRIV => SyslogFacility::LogAuthpriv,
+        syslog_loose::SyslogFacility::LOG_FTP => SyslogFacility::LogFtp,
+        syslog_loose::SyslogFacility::LOG_NTP => SyslogFacility::LogNtp,
+        syslog_loose::SyslogFacility::LOG_AUDIT => SyslogFacility::LogAudit,
+        syslog_loose::SyslogFacility::LOG_ALERT => SyslogFacility::LogAlert,
+        syslog_loose::SyslogFacility::LOG_CLOCKD => SyslogFacility::LogClockd,
+        syslog_loose::SyslogFacility::LOG_LOCAL0 => SyslogFacility::LogLocal0,
+        syslog_loose::SyslogFacility::LOG_LOCAL1 => SyslogFacility::LogLocal1,
+        syslog_loose::SyslogFacility::LOG_LOCAL2 => SyslogFacility::LogLocal2,
+        syslog_loose::SyslogFacility::LOG_LOCAL3 => SyslogFacility::LogLocal3,
+        syslog_loose::SyslogFacility::LOG_LOCAL4 => SyslogFacility::LogLocal4,
+        syslog_loose::SyslogFacility::LOG_LOCAL5 => SyslogFacility::LogLocal5,
+        syslog_loose::SyslogFacility::LOG_LOCAL6 => SyslogFacility::LogLocal6,
+        syslog_loose::SyslogFacility::LOG_LOCAL7 => SyslogFacility::LogLocal7,
+    }
+}
+
+fn to_grpc_severity(severity: syslog_loose::SyslogSeverity) -> SyslogSeverity {
+    use SyslogSeverity::*;
+    match severity {
+        syslog_loose::SyslogSeverity::SEV_EMERG => Emergency,
+        syslog_loose::SyslogSeverity::SEV_ALERT => Alert,
+        syslog_loose::SyslogSeverity::SEV_CRIT => Critical,
+        syslog_loose::SyslogSeverity::SEV_ERR => Error,
+        syslog_loose::SyslogSeverity::SEV_WARNING => Warning,
+        syslog_loose::SyslogSeverity::SEV_NOTICE => Notice,
+        syslog_loose::SyslogSeverity::SEV_INFO => Info,
+        syslog_loose::SyslogSeverity::SEV_DEBUG => Debug,
+    }
 }
