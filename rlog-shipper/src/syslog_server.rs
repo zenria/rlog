@@ -107,7 +107,7 @@ impl TryFrom<SyslogLog> for LogLine {
                 facility: value
                     .facility
                     .map(to_grpc_facility)
-                    .unwrap_or(SyslogFacility::LogLocal0) as i32,
+                    .unwrap_or(SyslogFacility::Local0) as i32,
                 severity: to_grpc_severity(severity) as i32,
                 appname: value.appname,
                 proc_pid,
@@ -120,31 +120,32 @@ impl TryFrom<SyslogLog> for LogLine {
 }
 
 fn to_grpc_facility(facility: syslog_loose::SyslogFacility) -> SyslogFacility {
+    use SyslogFacility::*;
     match facility {
-        syslog_loose::SyslogFacility::LOG_KERN => SyslogFacility::LogKern,
-        syslog_loose::SyslogFacility::LOG_USER => SyslogFacility::LogUser,
-        syslog_loose::SyslogFacility::LOG_MAIL => SyslogFacility::LogMail,
-        syslog_loose::SyslogFacility::LOG_DAEMON => SyslogFacility::LogDaemon,
-        syslog_loose::SyslogFacility::LOG_AUTH => SyslogFacility::LogAuth,
-        syslog_loose::SyslogFacility::LOG_SYSLOG => SyslogFacility::LogSyslog,
-        syslog_loose::SyslogFacility::LOG_LPR => SyslogFacility::LogLpr,
-        syslog_loose::SyslogFacility::LOG_NEWS => SyslogFacility::LogNews,
-        syslog_loose::SyslogFacility::LOG_UUCP => SyslogFacility::LogUucp,
-        syslog_loose::SyslogFacility::LOG_CRON => SyslogFacility::LogCron,
-        syslog_loose::SyslogFacility::LOG_AUTHPRIV => SyslogFacility::LogAuthpriv,
-        syslog_loose::SyslogFacility::LOG_FTP => SyslogFacility::LogFtp,
-        syslog_loose::SyslogFacility::LOG_NTP => SyslogFacility::LogNtp,
-        syslog_loose::SyslogFacility::LOG_AUDIT => SyslogFacility::LogAudit,
-        syslog_loose::SyslogFacility::LOG_ALERT => SyslogFacility::LogAlert,
-        syslog_loose::SyslogFacility::LOG_CLOCKD => SyslogFacility::LogClockd,
-        syslog_loose::SyslogFacility::LOG_LOCAL0 => SyslogFacility::LogLocal0,
-        syslog_loose::SyslogFacility::LOG_LOCAL1 => SyslogFacility::LogLocal1,
-        syslog_loose::SyslogFacility::LOG_LOCAL2 => SyslogFacility::LogLocal2,
-        syslog_loose::SyslogFacility::LOG_LOCAL3 => SyslogFacility::LogLocal3,
-        syslog_loose::SyslogFacility::LOG_LOCAL4 => SyslogFacility::LogLocal4,
-        syslog_loose::SyslogFacility::LOG_LOCAL5 => SyslogFacility::LogLocal5,
-        syslog_loose::SyslogFacility::LOG_LOCAL6 => SyslogFacility::LogLocal6,
-        syslog_loose::SyslogFacility::LOG_LOCAL7 => SyslogFacility::LogLocal7,
+        syslog_loose::SyslogFacility::LOG_KERN => Kernel,
+        syslog_loose::SyslogFacility::LOG_USER => User,
+        syslog_loose::SyslogFacility::LOG_MAIL => Mail,
+        syslog_loose::SyslogFacility::LOG_DAEMON => Daemon,
+        syslog_loose::SyslogFacility::LOG_AUTH => Auth,
+        syslog_loose::SyslogFacility::LOG_SYSLOG => Syslog,
+        syslog_loose::SyslogFacility::LOG_LPR => Lpr,
+        syslog_loose::SyslogFacility::LOG_NEWS => News,
+        syslog_loose::SyslogFacility::LOG_UUCP => Uucp,
+        syslog_loose::SyslogFacility::LOG_CRON => Cron,
+        syslog_loose::SyslogFacility::LOG_AUTHPRIV => Authpriv,
+        syslog_loose::SyslogFacility::LOG_FTP => Ftp,
+        syslog_loose::SyslogFacility::LOG_NTP => Ntp,
+        syslog_loose::SyslogFacility::LOG_AUDIT => Audit,
+        syslog_loose::SyslogFacility::LOG_ALERT => Alert,
+        syslog_loose::SyslogFacility::LOG_CLOCKD => Clockd,
+        syslog_loose::SyslogFacility::LOG_LOCAL0 => Local0,
+        syslog_loose::SyslogFacility::LOG_LOCAL1 => Local1,
+        syslog_loose::SyslogFacility::LOG_LOCAL2 => Local2,
+        syslog_loose::SyslogFacility::LOG_LOCAL3 => Local3,
+        syslog_loose::SyslogFacility::LOG_LOCAL4 => Local4,
+        syslog_loose::SyslogFacility::LOG_LOCAL5 => Local5,
+        syslog_loose::SyslogFacility::LOG_LOCAL6 => Local6,
+        syslog_loose::SyslogFacility::LOG_LOCAL7 => Local7,
     }
 }
 

@@ -139,9 +139,36 @@ impl TryFrom<LogLine> for IndexLogEntry {
                     free_fields: extra,
                 })
             }
-            rlog_grpc::rlog_service_protocol::log_line::Line::Syslog(_) => {
-                Err(anyhow!("This is currently not implemented"))?;
-                todo!()
+            rlog_grpc::rlog_service_protocol::log_line::Line::Syslog(syslog) => {
+                let severity = OTELSeverity::from(syslog.severity());
+                let severity_text = severity.to_string();
+                let severity_number = severity as u8;
+
+                let mut free_fields: HashMap<String, serde_json::Value> = HashMap::new();
+                free_fields.insert("facility".into(), syslog.facility().as_str_name().into());
+                if let Some(pid) = syslog.proc_pid {
+                    free_fields.insert("proc_pid".into(), pid.into());
+                }
+                if let Some(proc_name) = syslog.proc_name {
+                    free_fields.insert("proc_name".into(), proc_name.into());
+                }
+                if let Some(msgid) = syslog.msgid {
+                    free_fields.insert("msgid".into(), msgid.into());
+                }
+                let message = syslog.msg;
+                let service_name = syslog.appname.unwrap_or_else(|| "_syslog".into());
+
+                Ok(IndexLogEntry {
+                    message,
+                    timestamp_secs: timestamp.seconds as u64,
+                    timestamp_nanos: (timestamp.seconds * 1_000_000 + timestamp.nanos as i64)
+                        as u64,
+                    hostname,
+                    service_name,
+                    severity_text,
+                    severity_number: severity_number as u64,
+                    free_fields,
+                })
             }
         }
     }
