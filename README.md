@@ -1,23 +1,22 @@
 # rlog - remote logging tools
 
-Status: Experimental
+Status: Highly Experimental
 
-rlog collects logs locally and ship them to a remote logging destination. Collected logs are written to a [Quickwit](https://quickwit.io/) instance.
+rlog collects logs locally and ship them to a remote logging destination. Collected logs are then written to a [Quickwit](https://quickwit.io/) instance.
 
 - collect logs locally using syslog UDP protocol or GELF (graylog) protocol
 - send logs to a remote log collector (mTLS gRPC)
 - write logs to quickwit
 
-It provides a secure external interface with a minimal attack surface.
-
 ## Open Telemetry?
 
-Why not use Open Telemetry ecosystem and try to do hacky stuff instead?
+Why not using Open Telemetry ecosystem and stop trying to do hacky stuff instead?
 
 This software aims to be really easy to deploy on existing stacks (syslog&gelf). It
 is also an experiment used to validate some concepts. (especially quickwit)
 
-While the indexing schema seems bad ;
+This software relies on production ready Rust libraries (Tonic/Hyper/Rustls) and offers a minimal attack surface
+(gRPC endpoint is secured using mTLS).
 
 ## rlog-shipper
 
@@ -33,10 +32,9 @@ in [rlog-service.proto](rlog-grpc/proto/rlog-service.proto)
 
 ## rlog-collector
 
-=> **TODO**
-
-- export to quickvit using OTEL grpc protocol?
-- export to quickvit using custom schema?
+- implements the gRPC server described in [rlog-service.proto](rlog-grpc/proto/rlog-service.proto)
+- all logs are sent to quickwit
+- metrics of all shippers are collected and exposed though a prometheus `/metrics` HTTP endpoint
 
 ## rlog-helper
 
@@ -51,3 +49,20 @@ rlog-helper cert generate-server localhost
 rlog-helper cert generate-server client
 
 ```
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
