@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::atomic::Ordering};
 
 use anyhow::Context;
 use bytes::BytesMut;
@@ -10,6 +10,8 @@ use tokio::{
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
 use tracing::Instrument;
+
+use crate::metrics::GELF_QUEUE_COUNT;
 
 pub struct GelfLog(serde_json::Value);
 
@@ -89,6 +91,8 @@ pub async fn launch_gelf_server(bind_address: &str) -> anyhow::Result<Receiver<G
                                             }
                                         }
                                         return;
+                                    } else {
+                                        GELF_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
                                 Err(e) => {

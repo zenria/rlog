@@ -8,9 +8,11 @@ use rlog_grpc::{
     tonic::transport::{Certificate, Identity, Server, ServerTlsConfig},
 };
 
-use crate::index::IndexLogCollectorServer;
+use crate::{index::IndexLogCollectorServer, metrics::launch_async_process_collector};
 
+mod http_status_server;
 mod index;
+mod metrics;
 
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
@@ -33,6 +35,10 @@ struct Opts {
 
     #[arg(long, env, default_value = "rlog")]
     quickwit_index_id: String,
+
+    /// HTTP status server (/health, /metrics)
+    #[arg(long, env, default_value = "0.0.0.0:21040")]
+    http_status_bind_address: String,
 }
 
 #[tokio::main]
@@ -43,6 +49,8 @@ async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
 
     init_logging();
+
+    launch_async_process_collector(Duration::from_millis(500));
 
     let mut server = Server::builder()
         // always setup tcp keepalive
@@ -66,6 +74,8 @@ async fn main() -> anyhow::Result<()> {
         .context("Invalid grpc bind address")?;
 
     tracing::info!("Starting rlog-collector gRPC server at {addr}");
+
+    http_status_server::launch_server(&opts.http_status_bind_address)?;
 
     server
         .add_service(LogCollectorServer::new(IndexLogCollectorServer::new(

@@ -8,6 +8,9 @@ import "google/protobuf/empty.proto";
 service LogCollector {
     // log a new log line!
     rpc Log(LogLine) returns (google.protobuf.Empty){}
+
+    // report metrics from shipper
+    rpc ReportMetrics(Metrics) returns (google.protobuf.Empty){}
 }
 
 message LogLine {
@@ -96,3 +99,8 @@ enum SyslogSeverity {
     DEBUG=7;
 }
 
+message Metrics {
+    string hostname=1;
+    map<string,uint64> queue_count=2;
+    map<string,uint64> processed_count=3;     
+}

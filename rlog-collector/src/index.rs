@@ -5,11 +5,14 @@ use futures::TryFutureExt;
 use reqwest::{Client, Url};
 use rlog_common::utils::format_error;
 use rlog_grpc::{
-    rlog_service_protocol::LogLine,
+    rlog_service_protocol::{LogLine, Metrics},
     tonic::{self, async_trait, Status},
     OTELSeverity,
 };
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
+
+use crate::metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT};
 
 /// What is being indexed by quickwit
 #[derive(Serialize, Debug)]
@@ -51,6 +54,7 @@ impl IndexLogCollectorServer {
 impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
     for IndexLogCollectorServer
 {
+    #[instrument(skip(self, request))]
     async fn log(
         &self,
         request: tonic::Request<LogLine>,
@@ -90,6 +94,36 @@ impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
             Err(e) => {
                 tracing::error!("Unable to index logs to quickwit {e}");
                 Err(e)?;
+            }
+        }
+
+        Ok(tonic::Response::new(()))
+    }
+    #[instrument(skip(self, request))]
+    async fn report_metrics(
+        &self,
+        request: tonic::Request<Metrics>,
+    ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
+        let metrics = request.into_inner();
+        tracing::debug!("{metrics:#?}");
+
+        for (queue_name, count) in metrics.queue_count {
+            SHIPPER_QUEUE_COUNT
+                .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
+                .unwrap()
+                .set(count as i64);
+        }
+
+        for (queue_name, count) in metrics.processed_count {
+            let counter = SHIPPER_PROCESSED_COUNT
+                .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
+                .unwrap();
+            let current = counter.get();
+            if count > current {
+                counter.inc_by(count - current);
+            } else {
+                counter.reset();
+                counter.inc_by(count);
             }
         }
 

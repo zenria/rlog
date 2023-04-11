@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::atomic::Ordering, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
@@ -13,7 +13,13 @@ use syslog_server::launch_syslog_udp_server;
 use tokio::select;
 use tracing::Instrument;
 
+use crate::metrics::{
+    GELF_PROCESSED_COUNT, GELF_QUEUE_COUNT, SHIPPER_QUEUE_COUNT, SYSLOG_PROCESSED_COUNT,
+    SYSLOG_QUEUE_COUNT,
+};
+
 mod gelf_server;
+mod metrics;
 mod shipper;
 mod syslog_server;
 
@@ -91,7 +97,9 @@ async fn main() -> anyhow::Result<()> {
             select! {
                 gelf_log = gelf_receiver.recv() => {
                     match gelf_log {
-                        Some(gelf_log)=>{
+                        Some(gelf_log)=> {
+                            GELF_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
+                            GELF_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
                             // construct a valid LogLine from gelf stuff
                             let log_line = match LogLine::try_from(gelf_log) {
                                 Ok(l) => l,
@@ -105,6 +113,8 @@ async fn main() -> anyhow::Result<()> {
                             if let Err(e) = grpc_log_line_sender.send(log_line).await {
                                 tracing::error!("Channel closed! {e}");
                                 break;
+                            } else {
+                                SHIPPER_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
                             }
                         },
                         None => {
@@ -116,6 +126,8 @@ async fn main() -> anyhow::Result<()> {
                 syslog = syslog_receiver.recv() => {
                     match syslog {
                         Some(syslog)=>{
+                            SYSLOG_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
+                            SYSLOG_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
                             // construct a valid LogLine from gelf stuff
                             let log_line = match LogLine::try_from(syslog) {
                                 Ok(l) => l,
@@ -129,6 +141,8 @@ async fn main() -> anyhow::Result<()> {
                             if let Err(e) = grpc_log_line_sender.send(log_line).await {
                                 tracing::error!("Channel closed! {e}");
                                 break;
+                            } else {
+                                SHIPPER_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
                             }
                         },
                         None => {

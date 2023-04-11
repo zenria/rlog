@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::atomic::Ordering};
 
 use anyhow::{anyhow, Context};
 use rlog_grpc::rlog_service_protocol::{
@@ -9,6 +9,8 @@ use tokio::{
     net::UdpSocket,
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
+
+use crate::metrics::SYSLOG_QUEUE_COUNT;
 
 pub struct SyslogLog(Message<String>);
 
@@ -64,6 +66,8 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
                     }
                 }
                 return;
+            } else {
+                SYSLOG_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         }
     });
