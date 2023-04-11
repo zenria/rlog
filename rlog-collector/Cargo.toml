@@ -17,6 +17,6 @@ dotenv="0.15"
 futures="0.3"
 reqwest={version="0.11", default_features=false, features=["json", "rustls-tls"]}
 tracing="0.1"
-prometheus="0.13"
+prometheus={version="0.13", features=["process"]}
 lazy_static="^1.4"
 axum="0.6"
