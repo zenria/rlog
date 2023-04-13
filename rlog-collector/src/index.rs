@@ -14,6 +14,13 @@ use tracing::instrument;
 
 use crate::metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT};
 
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "lowercase")]
+enum LogSystem {
+    Syslog,
+    Gelf,
+}
+
 /// What is being indexed by quickwit
 #[derive(Serialize, Debug)]
 pub struct IndexLogEntry {
@@ -25,6 +32,8 @@ pub struct IndexLogEntry {
     severity_text: String,
     /// open telemetry severity
     severity_number: u64,
+
+    log_system: LogSystem,
 
     #[serde(flatten)]
     free_fields: HashMap<String, serde_json::Value>,
@@ -170,6 +179,7 @@ impl TryFrom<LogLine> for IndexLogEntry {
                     service_name,
                     severity_text,
                     severity_number: severity_number as u64,
+                    log_system: LogSystem::Gelf,
                     free_fields: extra,
                 })
             }
@@ -201,6 +211,7 @@ impl TryFrom<LogLine> for IndexLogEntry {
                     service_name,
                     severity_text,
                     severity_number: severity_number as u64,
+                    log_system: LogSystem::Syslog,
                     free_fields,
                 })
             }
