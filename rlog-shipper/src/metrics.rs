@@ -14,6 +14,8 @@ lazy_static! {
     pub(crate) static ref SYSLOG_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
     pub(crate) static ref SHIPPER_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
     pub(crate) static ref SHIPPER_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static ref GELF_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static ref SYSLOG_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
 }
 
 pub(crate) fn to_grpc_metrics() -> Metrics {
@@ -35,6 +37,8 @@ pub(crate) fn to_grpc_metrics() -> Metrics {
         },
         error_count: {
             let mut map = HashMap::new();
+            map.insert("glef_in".into(), GELF_ERROR_COUNT.load(Relaxed));
+            map.insert("syslog_in".into(), SYSLOG_ERROR_COUNT.load(Relaxed));
             map.insert("grpc_out".into(), SHIPPER_ERROR_COUNT.load(Relaxed));
             map
         },

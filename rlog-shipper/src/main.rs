@@ -14,8 +14,8 @@ use tokio::select;
 use tracing::Instrument;
 
 use crate::metrics::{
-    GELF_PROCESSED_COUNT, GELF_QUEUE_COUNT, SHIPPER_QUEUE_COUNT, SYSLOG_PROCESSED_COUNT,
-    SYSLOG_QUEUE_COUNT,
+    GELF_ERROR_COUNT, GELF_PROCESSED_COUNT, GELF_QUEUE_COUNT, SHIPPER_QUEUE_COUNT,
+    SYSLOG_ERROR_COUNT, SYSLOG_PROCESSED_COUNT, SYSLOG_QUEUE_COUNT,
 };
 
 mod gelf_server;
@@ -104,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
                             let log_line = match LogLine::try_from(gelf_log) {
                                 Ok(l) => l,
                                 Err(e) => {
+                                    GELF_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
                                     tracing::error!("received an invalid GELF log! {}", format_error(e));
                                     continue;
                                 }
@@ -132,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
                             let log_line = match LogLine::try_from(syslog) {
                                 Ok(l) => l,
                                 Err(e) => {
+                                    SYSLOG_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
                                     tracing::error!("received an invalid Syslog log! {}", format_error(e));
                                     continue;
                                 }

@@ -10,7 +10,7 @@ use tokio::{
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
 
-use crate::metrics::SYSLOG_QUEUE_COUNT;
+use crate::metrics::{GELF_ERROR_COUNT, SYSLOG_QUEUE_COUNT};
 
 pub struct SyslogLog(Message<String>);
 
@@ -56,6 +56,7 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
             tracing::debug!("Decoded {}", message);
 
             if let Err(e) = sender.try_send(SyslogLog(message)) {
+                GELF_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
                 match e {
                     TrySendError::Full(value) => {
                         tracing::error!("Send buffer full: discarding value {}", value);

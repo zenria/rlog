@@ -11,7 +11,7 @@ use tokio::{
 };
 use tracing::Instrument;
 
-use crate::metrics::GELF_QUEUE_COUNT;
+use crate::metrics::{GELF_ERROR_COUNT, GELF_QUEUE_COUNT};
 
 pub struct GelfLog(serde_json::Value);
 
@@ -75,6 +75,7 @@ pub async fn launch_gelf_server(bind_address: &str) -> anyhow::Result<Receiver<G
                                     tracing::debug!("Received: {valid_json}");
 
                                     if let Err(e) = sender.try_send(GelfLog(valid_json)) {
+                                        GELF_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
                                         match e {
                                             TrySendError::Full(value) => {
                                                 tracing::error!(
