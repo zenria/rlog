@@ -102,5 +102,7 @@ enum SyslogSeverity {
 message Metrics {
     string hostname=1;
     map<string,uint64> queue_count=2;
-    map<string,uint64> processed_count=3;     
+    map<string,uint64> processed_count=3;   
+    map<string,uint64> error_count=4;   
+
 }

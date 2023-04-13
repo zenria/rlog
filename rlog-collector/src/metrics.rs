@@ -19,6 +19,12 @@ lazy_static! {
         &["hostname", "queue_name"]
     )
     .unwrap();
+    pub(crate) static ref SHIPPER_ERROR_COUNT: IntCounterVec = register_int_counter_vec!(
+        "rlog_shipper_error_count",
+        "Number of elements in error in queues",
+        &["hostname", "queue_name"]
+    )
+    .unwrap();
     pub(crate) static ref COLLECTOR_OUTPUT_COUNT: IntCounterVec = register_int_counter_vec!(
         "rlog_collector_output_count",
         "Number of elements output to various systems",

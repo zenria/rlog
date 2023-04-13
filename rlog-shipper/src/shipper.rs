@@ -13,10 +13,11 @@ use tokio::{
 };
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
 
-use crate::metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT, to_grpc_metrics};
+use crate::metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT, to_grpc_metrics, SHIPPER_ERROR_COUNT};
 
 pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
     let (sender, mut receiver) = channel(20_000);
+
 
     tokio::spawn(async move {
         loop {
@@ -46,8 +47,8 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
                                     // do something
                                     let request = Request::new(log_line);
                                     let response: Result<Response<()>, Status> = client.log(request).await;
-                                    SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
                                     if let Err(status) = response {
+                                        SHIPPER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
                                         if status.code() == Code::Unavailable {
                                             tracing::error!(
                                                 "Unable to send LogLine, collector unavailable: {}",
@@ -57,6 +58,8 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
                                             // unhandled error
                                             Err(status).context("unable to send log line to collector")?;
                                         }
+                                    } else {
+                                        SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
                                 None => {

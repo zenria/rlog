@@ -16,7 +16,8 @@ use crate::{
     http_status_server::report_connected_host,
     metrics::{
         COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
-        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT,
+        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE, SHIPPER_ERROR_COUNT, SHIPPER_PROCESSED_COUNT,
+        SHIPPER_QUEUE_COUNT,
     },
 };
 
@@ -147,6 +148,18 @@ impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
 
         for (queue_name, count) in metrics.processed_count {
             let counter = SHIPPER_PROCESSED_COUNT
+                .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
+                .unwrap();
+            let current = counter.get();
+            if count > current {
+                counter.inc_by(count - current);
+            } else {
+                counter.reset();
+                counter.inc_by(count);
+            }
+        }
+        for (queue_name, count) in metrics.error_count {
+            let counter = SHIPPER_ERROR_COUNT
                 .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
                 .unwrap();
             let current = counter.get();
