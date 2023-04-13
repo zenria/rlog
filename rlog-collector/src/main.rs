@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting rlog-collector gRPC server at {addr}");
 
-    http_status_server::launch_server(&opts.http_status_bind_address)?;
+    http_status_server::launch_server(&opts.http_status_bind_address, &opts.quickwit_rest_url)?;
 
     server
         .add_service(LogCollectorServer::new(IndexLogCollectorServer::new(
