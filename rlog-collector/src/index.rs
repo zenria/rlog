@@ -12,9 +12,12 @@ use rlog_grpc::{
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::metrics::{
-    COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
-    OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT,
+use crate::{
+    http_status_server::report_connected_host,
+    metrics::{
+        COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
+        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT,
+    },
 };
 
 #[derive(Serialize, Debug)]
@@ -133,6 +136,7 @@ impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
     ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
         let metrics = request.into_inner();
         tracing::debug!("{metrics:#?}");
+        report_connected_host(&metrics.hostname).await;
 
         for (queue_name, count) in metrics.queue_count {
             SHIPPER_QUEUE_COUNT
