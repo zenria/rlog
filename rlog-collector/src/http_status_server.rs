@@ -5,6 +5,8 @@ use axum::{routing::get, Router};
 
 use crate::metrics::generate_metrics;
 
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 pub fn launch_server(bind_address: &str) -> anyhow::Result<()> {
     let sock_addr = bind_address
         .parse::<SocketAddr>()
@@ -12,6 +14,7 @@ pub fn launch_server(bind_address: &str) -> anyhow::Result<()> {
 
     tokio::spawn(async move {
         let app = Router::new()
+            .route("/version", get(|| async { VERSION }))
             .route("/health", get(|| async { "OK" }))
             .route("/metrics", get(|| async { generate_metrics() }));
         tracing::info!("Starting HTTP status server {sock_addr}");
