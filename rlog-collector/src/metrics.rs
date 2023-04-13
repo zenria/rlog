@@ -19,7 +19,17 @@ lazy_static! {
         &["hostname", "queue_name"]
     )
     .unwrap();
+    pub(crate) static ref COLLECTOR_OUTPUT_COUNT: IntCounterVec = register_int_counter_vec!(
+        "rlog_collector_output_count",
+        "Number of elements output to various systems",
+        &["system", "status"]
+    )
+    .unwrap();
 }
+
+pub const OUTPUT_STATUS_OK_LABEL_VALUE: &str = "ok";
+pub const OUTPUT_STATUS_ERROR_LABEL_VALUE: &str = "error";
+pub const OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE: &str = "quickwit";
 
 /// Generate the content of /metrics prometheus metrics gathering endpoint.
 ///

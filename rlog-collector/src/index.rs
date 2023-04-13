@@ -12,7 +12,10 @@ use rlog_grpc::{
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT};
+use crate::metrics::{
+    COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
+    OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT,
+};
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -99,9 +102,24 @@ impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
         }
         .await
         {
-            Ok(_) => tracing::debug!("Indexed {log_entry:#?}"),
+            Ok(_) => {
+                // NOTE: quickwit will not throw errors of the submitted document is not valid in respect with the index schema
+                tracing::debug!("Indexed {log_entry:#?}");
+                COLLECTOR_OUTPUT_COUNT
+                    .with_label_values(&[
+                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                        OUTPUT_STATUS_OK_LABEL_VALUE,
+                    ])
+                    .inc();
+            }
             Err(e) => {
                 tracing::error!("Unable to index logs to quickwit {e}");
+                COLLECTOR_OUTPUT_COUNT
+                    .with_label_values(&[
+                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                        OUTPUT_STATUS_ERROR_LABEL_VALUE,
+                    ])
+                    .inc();
                 Err(e)?;
             }
         }
