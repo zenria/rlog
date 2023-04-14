@@ -1,6 +1,7 @@
 use std::{fmt::Display, sync::atomic::Ordering};
 
 use anyhow::{anyhow, Context};
+use arc_swap::access::Access;
 use rlog_grpc::rlog_service_protocol::{
     log_line::Line, LogLine, SyslogFacility, SyslogLogLine, SyslogSeverity,
 };
@@ -10,7 +11,10 @@ use tokio::{
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
 
-use crate::metrics::{SYSLOG_ERROR_COUNT, SYSLOG_QUEUE_COUNT};
+use crate::{
+    config::{Config, CONFIG},
+    metrics::{SYSLOG_ERROR_COUNT, SYSLOG_QUEUE_COUNT},
+};
 
 pub struct SyslogLog(Message<String>);
 
@@ -21,7 +25,8 @@ impl Display for SyslogLog {
 }
 
 pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Receiver<SyslogLog>> {
-    let (sender, receiver) = channel(10_000);
+    let config = CONFIG.map(|config: &Config| &config.syslog_in);
+    let (sender, receiver) = channel(config.load().common.max_buffer_size);
 
     let socket = UdpSocket::bind(&bind_address)
         .await
@@ -53,10 +58,35 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
             tracing::debug!("Received {}", message);
             let message = syslog_loose::parse_message(&message);
 
+            // TODO shall we use exclusion filters here?
             if message.appname == Some("rlog-shipper") {
                 // Ignore message coming from me in case rlog-shipper output is redirected to
                 // syslogs (typicall if systemd is used)
                 continue;
+            }
+
+            for exclusion_filter in &config.load().exclusion_filters {
+                if let (Some(pattern), Some(appname)) = (&exclusion_filter.appname, message.appname)
+                {
+                    if pattern.is_match(appname) {
+                        // message excluded
+                        continue;
+                    }
+                }
+                if let (Some(pattern), Some(facility)) =
+                    (&exclusion_filter.facility, message.facility)
+                {
+                    if pattern.is_match(facility.as_str()) {
+                        // message excluded
+                        continue;
+                    }
+                }
+                if let Some(pattern) = &exclusion_filter.message {
+                    if pattern.is_match(&message.msg) {
+                        // message excluded
+                        continue;
+                    }
+                }
             }
 
             let message: Message<String> = message.into();

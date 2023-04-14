@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::atomic::Ordering};
 
 use anyhow::Context;
+use arc_swap::access::Access;
 use bytes::BytesMut;
 use rlog_grpc::rlog_service_protocol::{GelfLogLine, LogLine};
 use serde_json::Value;
@@ -11,7 +12,10 @@ use tokio::{
 };
 use tracing::Instrument;
 
-use crate::metrics::{GELF_ERROR_COUNT, GELF_QUEUE_COUNT};
+use crate::{
+    config::{Config, CONFIG},
+    metrics::{GELF_ERROR_COUNT, GELF_QUEUE_COUNT},
+};
 
 pub struct GelfLog(serde_json::Value);
 
@@ -22,7 +26,8 @@ impl GelfLog {
 }
 
 pub async fn launch_gelf_server(bind_address: &str) -> anyhow::Result<Receiver<GelfLog>> {
-    let (sender, receiver) = channel(10000);
+    let config = CONFIG.map(|config: &Config| &config.gelf_in);
+    let (sender, receiver) = channel(config.load().common.max_buffer_size);
 
     let listener = TcpListener::bind(bind_address)
         .await

@@ -13,10 +13,10 @@ use tokio::{
 };
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
 
-use crate::metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT, to_grpc_metrics, SHIPPER_ERROR_COUNT};
+use crate::{metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT, to_grpc_metrics, SHIPPER_ERROR_COUNT}, config::CONFIG};
 
 pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
-    let (sender, mut receiver) = channel(20_000);
+    let (sender, mut receiver) = channel(CONFIG.load().grpc_out.max_buffer_size);
 
 
     tokio::spawn(async move {

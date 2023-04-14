@@ -2,6 +2,7 @@ use std::{str::FromStr, sync::atomic::Ordering, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
+use config::setup_config_from_file;
 use gelf_server::launch_gelf_server;
 use rlog_common::utils::{format_error, init_logging, read_file};
 use rlog_grpc::{
@@ -18,6 +19,7 @@ use crate::metrics::{
     SYSLOG_ERROR_COUNT, SYSLOG_PROCESSED_COUNT, SYSLOG_QUEUE_COUNT,
 };
 
+mod config;
 mod gelf_server;
 mod metrics;
 mod shipper;
@@ -51,6 +53,10 @@ struct Opts {
     /// gelf tcp protocol bind address
     #[arg(long, env, default_value = "127.0.0.1:12201")]
     gelf_tcp_bind_address: String,
+
+    /// Configuration file, if not provided, a minimal default configuration will be used
+    #[arg(long, short, env)]
+    config: Option<String>,
 }
 
 #[tokio::main]
@@ -59,6 +65,10 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("WARN: unable to setup dotenv (.env files): {e}");
     };
     let opts = Opts::parse();
+
+    if let Some(path) = opts.config.as_ref() {
+        setup_config_from_file(path)?;
+    }
 
     let endpoint = Channel::builder(
         Uri::from_str(&opts.grpc_collector_url)
