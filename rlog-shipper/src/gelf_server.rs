@@ -3,13 +3,16 @@ use std::{collections::HashMap, sync::atomic::Ordering};
 use anyhow::Context;
 use arc_swap::access::Access;
 use bytes::BytesMut;
+use futures::FutureExt;
 use rlog_grpc::rlog_service_protocol::{GelfLogLine, LogLine};
 use serde_json::Value;
 use tokio::{
     io::AsyncReadExt,
     net::TcpListener,
+    select,
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
@@ -25,7 +28,10 @@ impl GelfLog {
     }
 }
 
-pub async fn launch_gelf_server(bind_address: &str) -> anyhow::Result<Receiver<GelfLog>> {
+pub async fn launch_gelf_server(
+    bind_address: &str,
+    shutdown_token: CancellationToken,
+) -> anyhow::Result<Receiver<GelfLog>> {
     let config = CONFIG.map(|config: &Config| &config.gelf_in);
     let (sender, receiver) = channel(config.load().common.max_buffer_size);
 
@@ -37,84 +43,103 @@ pub async fn launch_gelf_server(bind_address: &str) -> anyhow::Result<Receiver<G
 
     tokio::spawn(async move {
         loop {
-            let (mut socket, r) = match listener.accept().await {
-                Ok(connection) => connection,
-                Err(e) => {
-                    tracing::error!("Unable to accept incoming connection! {e}");
+            select! {
+                _ = shutdown_token.cancelled() => {
                     return;
                 }
-            };
-            let sender = sender.clone();
-            let remote_addr = format!("{r}");
-            println!("Connected from {r}");
-            tokio::spawn(
-                async move {
-                    tracing::info!("new connection");
-                    let mut buffer = BytesMut::with_capacity(4096);
-                    // In a loop, read data from the socket and write the data back.
-                    loop {
-                        let _n = match socket.read_buf(&mut buffer).await {
-                            // graceful shutdown
-                            Ok(n) if n == 0 && buffer.len() == 0 => break,
-                            // connection closed during transmission of a frame
-                            Ok(n) if n == 0 => {
-                                tracing::error!("Connection reset by peer");
-                                break;
-                            }
-                            Ok(n) => n,
-                            Err(e) => {
-                                tracing::error!("failed to read from socket; {e}");
-                                return;
-                            }
-                        };
-                        // check we received a \0 bytes indicating the end of a frame
-                        while let Some(i) = buffer
-                            .iter()
-                            .enumerate()
-                            .find(|(_i, byte)| byte == &&0)
-                            .map(|(i, _)| i)
-                        {
-                            // there is a message between cursor & i
-                            match serde_json::from_slice::<Value>(&buffer[0..i]) {
-                                Ok(valid_json) => {
-                                    tracing::debug!("Received: {valid_json}");
-
-                                    if let Err(e) = sender.try_send(GelfLog(valid_json)) {
-                                        GELF_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                                        match e {
-                                            TrySendError::Full(value) => {
-                                                tracing::error!(
-                                                    "Send buffer full: discarding value {}",
-                                                    value.to_json()
-                                                );
-                                            }
-                                            TrySendError::Closed(value) => {
-                                                // this is not possible by construction...
-                                                tracing::error!(
-                                                    "Channel closed, discarding value {}",
-                                                    value.to_json()
-                                                );
-                                            }
-                                        }
+                res = listener.accept() => {
+                    let (mut socket, r) = match res {
+                        Ok(connection) => connection,
+                        Err(e) => {
+                            tracing::error!("Unable to accept incoming connection! {e}");
+                            return;
+                        }
+                    };
+                    let shutdown_token = shutdown_token.child_token();
+                    let sender = sender.clone();
+                    let remote_addr = format!("{r}");
+                    println!("Connected from {r}");
+                    tokio::spawn(
+                        async move {
+                            tracing::info!("new connection");
+                            let mut buffer = BytesMut::with_capacity(4096);
+                            // In a loop, read data from the socket and write the data back.
+                            loop {
+                                select!{
+                                    _ = shutdown_token.cancelled() => {
                                         return;
-                                    } else {
-                                        GELF_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    res = socket.read_buf(&mut buffer) => {
+                                        let _n = match res {
+                                            // graceful shutdown
+                                            Ok(n) if n == 0 && buffer.len() == 0 => break,
+                                            // connection closed during transmission of a frame
+                                            Ok(n) if n == 0 => {
+                                                tracing::error!("Connection reset by peer");
+                                                break;
+                                            }
+                                            Ok(n) => n,
+                                            Err(e) => {
+                                                tracing::error!("failed to read from socket; {e}");
+                                                return;
+                                            }
+                                        };
+                                        // check we received a \0 bytes indicating the end of a frame
+                                        while let Some(i) = buffer
+                                            .iter()
+                                            .enumerate()
+                                            .find(|(_i, byte)| byte == &&0)
+                                            .map(|(i, _)| i)
+                                        {
+                                            // there is a message between cursor & i
+                                            match serde_json::from_slice::<Value>(&buffer[0..i]) {
+                                                Ok(valid_json) => {
+                                                    tracing::debug!("Received: {valid_json}");
+
+                                                    if let Err(e) = sender.try_send(GelfLog(valid_json)) {
+                                                        GELF_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+                                                        match e {
+                                                            TrySendError::Full(value) => {
+                                                                tracing::error!(
+                                                                    "Send buffer full: discarding value {}",
+                                                                    value.to_json()
+                                                                );
+                                                            }
+                                                            TrySendError::Closed(value) => {
+                                                                // this is not possible by construction...
+                                                                tracing::error!(
+                                                                    "Channel closed, discarding value {}",
+                                                                    value.to_json()
+                                                                );
+                                                            }
+                                                        }
+                                                        return;
+                                                    } else {
+                                                        GELF_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Unable to decode json: {e}")
+                                                }
+                                            }
+                                            // remove the first part of the buffer and discard it
+                                            let _ = buffer.split_to(i + 1);
+                                        }
                                     }
                                 }
-                                Err(e) => {
-                                    tracing::error!("Unable to decode json: {e}")
-                                }
+
                             }
-                            // remove the first part of the buffer and discard it
-                            let _ = buffer.split_to(i + 1);
+                            tracing::info!("Connection closed.");
                         }
-                    }
-                    tracing::info!("Connection closed.");
+                        .instrument(tracing::info_span!("gelf_conn_handler", remote_addr)),
+                    );
                 }
-                .instrument(tracing::info_span!("gelf_conn_handler", remote_addr)),
-            );
+            }
         }
-    });
+    }
+    .then(|_| async {
+        tracing::info!("GELF server stopped.")
+    }));
 
     Ok(receiver)
 }

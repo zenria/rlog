@@ -9,17 +9,17 @@ use rlog_grpc::{
 };
 use tokio::{
     sync::mpsc::{channel, Sender},
-    time::interval,select
+    time::interval,select, task::JoinHandle
 };
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
 
 use crate::{metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT, to_grpc_metrics, SHIPPER_ERROR_COUNT}, config::CONFIG};
 
-pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
+pub fn launch_grpc_shipper(endpoint: Endpoint) -> (Sender<LogLine>, JoinHandle<()>) {
     let (sender, mut receiver) = channel(CONFIG.load().grpc_out.max_buffer_size);
 
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         loop {
             match async {
                 tracing::info!("Connecting to collector");
@@ -63,7 +63,6 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
                                     }
                                 }
                                 None => {
-                                    tracing::error!("Channel closed!");
                                     break;
                                 }
                             }
@@ -78,7 +77,7 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
             {
                 Ok(_) => {
                     // this should not happen (by construction)
-                    tracing::error!("log_line channel closed!");
+                    tracing::info!("gelf_out channel closed, shutting down GELF output");
                     return;
                 }
                 Err(e) => {
@@ -92,5 +91,5 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> Sender<LogLine> {
         }
     });
 
-    sender
+    (sender,handle)
 }

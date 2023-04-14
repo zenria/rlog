@@ -2,14 +2,17 @@ use std::{fmt::Display, sync::atomic::Ordering};
 
 use anyhow::{anyhow, Context};
 use arc_swap::access::Access;
+use futures::FutureExt;
 use rlog_grpc::rlog_service_protocol::{
     log_line::Line, LogLine, SyslogFacility, SyslogLogLine, SyslogSeverity,
 };
 use syslog_loose::Message;
 use tokio::{
     net::UdpSocket,
+    select,
     sync::mpsc::{channel, error::TrySendError, Receiver},
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{Config, CONFIG},
@@ -24,7 +27,10 @@ impl Display for SyslogLog {
     }
 }
 
-pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Receiver<SyslogLog>> {
+pub async fn launch_syslog_udp_server(
+    bind_address: &str,
+    shutdown_token: CancellationToken,
+) -> anyhow::Result<Receiver<SyslogLog>> {
     let config = CONFIG.map(|config: &Config| &config.syslog_in);
     let (sender, receiver) = channel(config.load().common.max_buffer_size);
 
@@ -34,54 +40,64 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
 
     tracing::info!("Syslog server listening UDP {bind_address}");
 
-    tokio::spawn(async move {
-        // An udp packet cannot be larger than 65507 bytes.
-        // Note: RFC 5424 requires the receiver should be able to handle
-        // a minimum of 2048 bytes but we can afford to handle a bit more
-        // bytes ;)
-        let mut buf = [0u8; 65507];
-        loop {
-            let (n, from) = match socket.recv_from(&mut buf).await {
-                Ok(r) => r,
-                Err(e) => {
-                    // this is highly unlikely!
-                    tracing::error!("Unable to read UDP socket {e}");
-                    continue;
-                }
-            };
-            let from = from.to_string();
-            let span = tracing::info_span!("syslog_in", remote_addr = from);
-            let _entered = span.enter();
-
-            let datagram = &buf[0..n];
-            let message = String::from_utf8_lossy(datagram);
-            tracing::debug!("Received {}", message);
-            let message = syslog_loose::parse_message(&message);
-
-            if filters::is_excluded(&message) {
-                continue;
-            }
-
-            let message: Message<String> = message.into();
-            tracing::debug!("Decoded {}", message);
-
-            if let Err(e) = sender.try_send(SyslogLog(message)) {
-                SYSLOG_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                match e {
-                    TrySendError::Full(value) => {
-                        tracing::error!("Send buffer full: discarding value {}", value);
+    tokio::spawn(
+        async move {
+            // An udp packet cannot be larger than 65507 bytes.
+            // Note: RFC 5424 requires the receiver should be able to handle
+            // a minimum of 2048 bytes but we can afford to handle a bit more
+            // bytes ;)
+            let mut buf = [0u8; 65507];
+            loop {
+                select! {
+                    _ = shutdown_token.cancelled() => {
+                        return;
                     }
-                    TrySendError::Closed(value) => {
-                        // this is not possible by construction...
-                        tracing::error!("Channel closed, discarding value {}", value);
+                    res = socket.recv_from(&mut buf) => {
+                        let (n, from) = match res {
+                            Ok(r) => r,
+                            Err(e) => {
+                                // this is highly unlikely!
+                                tracing::error!("Unable to read UDP socket {e}");
+                                continue;
+                            }
+                        };
+                        let from = from.to_string();
+                        let span = tracing::info_span!("syslog_in", remote_addr = from);
+                        let _entered = span.enter();
+
+                        let datagram = &buf[0..n];
+                        let message = String::from_utf8_lossy(datagram);
+                        tracing::debug!("Received {}", message);
+                        let message = syslog_loose::parse_message(&message);
+
+                        if filters::is_excluded(&message) {
+                            continue;
+                        }
+
+                        let message: Message<String> = message.into();
+                        tracing::debug!("Decoded {}", message);
+
+                        if let Err(e) = sender.try_send(SyslogLog(message)) {
+                            SYSLOG_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+                            match e {
+                                TrySendError::Full(value) => {
+                                    tracing::error!("Send buffer full: discarding value {}", value);
+                                }
+                                TrySendError::Closed(value) => {
+                                    // this is not possible by construction...
+                                    tracing::error!("Channel closed, discarding value {}", value);
+                                }
+                            }
+                            return;
+                        } else {
+                            SYSLOG_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
-                return;
-            } else {
-                SYSLOG_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         }
-    });
+        .then(|_| async { tracing::info!("Syslog server stopped.") }),
+    );
 
     Ok(receiver)
 }
