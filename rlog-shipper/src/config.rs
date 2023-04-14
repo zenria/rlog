@@ -71,13 +71,17 @@ fn load_config<P: AsRef<Path>>(path: P) -> anyhow::Result<(Config, SystemTime)> 
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Config {
+    #[serde(default)]
     pub syslog_in: SyslogInputConfig,
+    #[serde(default)]
     pub gelf_in: GelfInputConfig,
+    #[serde(default)]
     pub grpc_out: GrpcOutConfig,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct GrpcOutConfig {
+    #[serde(default = "default_buffer_size")]
     pub max_buffer_size: usize,
 }
 impl Default for GrpcOutConfig {
@@ -89,9 +93,14 @@ impl Default for GrpcOutConfig {
     }
 }
 
+fn default_buffer_size() -> usize {
+    20_000
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct CommonInputConfig {
     /// This will not be hot reloaded (buffer is allocated at the start of the application)
+    #[serde(default = "default_buffer_size")]
     pub max_buffer_size: usize,
 }
 
@@ -105,7 +114,7 @@ impl Default for CommonInputConfig {
 
 #[derive(Deserialize, Default, Serialize)]
 pub struct SyslogInputConfig {
-    #[serde(flatten)]
+    #[serde(flatten, default)]
     pub common: CommonInputConfig,
     pub exclusion_filters: Vec<SyslogExclusionFilter>,
 }
@@ -126,6 +135,6 @@ pub struct SyslogExclusionFilter {
 
 #[derive(Deserialize, Default, Serialize)]
 pub struct GelfInputConfig {
-    #[serde(flatten)]
+    #[serde(flatten, default)]
     pub common: CommonInputConfig,
 }
