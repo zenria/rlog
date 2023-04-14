@@ -1,6 +1,6 @@
 [package]
 name = "rlog-common"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,3 +11,5 @@ anyhow="1"
 atty="0.2"
 tracing-subscriber = {version="0.3", features=["env-filter"]}
 tracing="0.1"
+sled="0.34"
+tokio={version="1", features=["macros", "rt-multi-thread", "sync", "time"]}
