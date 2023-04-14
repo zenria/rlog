@@ -29,7 +29,13 @@ pub fn setup_config_from_file(path: &str) -> anyhow::Result<()> {
                 if modified != last_modified {
                     tracing::info!("Config file modified, reloading it!");
                     match load_and_swap_config(&path) {
-                        Ok(m) => last_modified = m,
+                        Ok(m) => {
+                            last_modified = m;
+                            tracing::info!(
+                                "New config:\n{}",
+                                serde_yaml::to_string(CONFIG.load().as_ref()).unwrap()
+                            );
+                        }
                         Err(e) => tracing::error!("Unable to reload config: {}", format_error(e)),
                     }
                 }
