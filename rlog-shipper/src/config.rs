@@ -110,7 +110,11 @@ pub struct SyslogInputConfig {
     pub exclusion_filters: Vec<SyslogExclusionFilter>,
 }
 
-#[derive(Deserialize)]
+/// Exclusion filter patterns for syslog.
+///
+/// If more than one pattern is specified, all the pattern specified must match for
+/// the log entry to be excluded
+#[derive(Deserialize, Default)]
 pub struct SyslogExclusionFilter {
     #[serde(with = "serde_regex")]
     pub appname: Option<Regex>,
