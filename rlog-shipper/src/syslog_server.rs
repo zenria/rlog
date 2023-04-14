@@ -65,35 +65,8 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
                 continue;
             }
 
-            for exclusion_filter in &config.load().exclusion_filters {
-                // message will be excluded only if shall_exclude==Some(true)
-                let mut shall_exclude = None;
-                if let (Some(pattern), Some(appname)) = (&exclusion_filter.appname, message.appname)
-                {
-                    shall_exclude = Some(pattern.is_match(appname))
-                }
-                if let (Some(pattern), Some(facility)) =
-                    (&exclusion_filter.facility, message.facility)
-                {
-                    shall_exclude = shall_exclude
-                        // previous filter has been applied, it will be excluded only if this filter applies
-                        .and_then(|excl| Some(excl && pattern.is_match(facility.as_str())))
-                        // no previous filter in the config!
-                        .or_else(|| Some(pattern.is_match(facility.as_str())));
-                }
-                if let Some(pattern) = &exclusion_filter.message {
-                    shall_exclude = shall_exclude
-                        // previous filter has been applied, it will be excluded only if this filter applies
-                        .and_then(|excl| Some(excl && pattern.is_match(message.msg)))
-                        // no previous filter in the config!
-                        .or_else(|| Some(pattern.is_match(message.msg)));
-                }
-
-                if let Some(shall_exclude) = shall_exclude {
-                    if shall_exclude {
-                        continue;
-                    }
-                }
+            if filters::is_excluded(&message) {
+                continue;
             }
 
             let message: Message<String> = message.into();
@@ -118,6 +91,96 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
     });
 
     Ok(receiver)
+}
+
+mod filters {
+    use syslog_loose::Message;
+
+    use crate::config::CONFIG;
+
+    pub(super) fn is_excluded<T: AsRef<str> + Ord + PartialEq + Clone>(
+        message: &Message<T>,
+    ) -> bool {
+        for exclusion_filter in &CONFIG.load().syslog_in.exclusion_filters {
+            // message will be excluded only if shall_exclude==Some(true)
+            let mut shall_exclude = None;
+            if let (Some(pattern), Some(appname)) = (&exclusion_filter.appname, &message.appname) {
+                shall_exclude = Some(pattern.is_match(appname.as_ref()))
+            }
+            if let (Some(pattern), Some(facility)) = (&exclusion_filter.facility, message.facility)
+            {
+                shall_exclude = shall_exclude
+                    // previous filter has been applied, it will be excluded only if this filter applies
+                    .and_then(|excl| Some(excl && pattern.is_match(facility.as_str())))
+                    // no previous filter in the config!
+                    .or_else(|| Some(pattern.is_match(facility.as_str())));
+            }
+            if let Some(pattern) = &exclusion_filter.message {
+                shall_exclude = shall_exclude
+                    // previous filter has been applied, it will be excluded only if this filter applies
+                    .and_then(|excl| Some(excl && pattern.is_match(message.msg.as_ref())))
+                    // no previous filter in the config!
+                    .or_else(|| Some(pattern.is_match(message.msg.as_ref())));
+            }
+
+            return shall_exclude.unwrap_or(false);
+        }
+        false
+    }
+
+    #[test]
+    #[cfg(test)]
+    fn test_excluded() {
+        use std::{sync::Arc, vec};
+
+        use regex::Regex;
+
+        use crate::config::{Config, SyslogExclusionFilter, SyslogInputConfig};
+
+        let message = Message {
+            protocol: syslog_loose::Protocol::RFC5424(0),
+            facility: Some(syslog_loose::SyslogFacility::LOG_AUDIT),
+            severity: None,
+            timestamp: None,
+            hostname: None,
+            appname: Some("my-ultimate-app.sh"),
+            procid: None,
+            msgid: None,
+            structured_data: vec![],
+            msg: "natty line some stuff in there",
+        };
+
+        let message2 = Message {
+            protocol: syslog_loose::Protocol::RFC5424(0),
+            facility: Some(syslog_loose::SyslogFacility::LOG_AUDIT),
+            severity: None,
+            timestamp: None,
+            hostname: None,
+            appname: Some("postfix"),
+            procid: None,
+            msgid: None,
+            structured_data: vec![],
+            msg: "natty line some stuff in there",
+        };
+
+        assert!(!is_excluded(&message));
+
+        let new_config = Config {
+            syslog_in: SyslogInputConfig {
+                exclusion_filters: vec![SyslogExclusionFilter {
+                    appname: Some(Regex::new("my-ultimate-app.*").unwrap()),
+                    facility: None,
+                    message: Some(Regex::new("natty").unwrap()),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        CONFIG.store(Arc::new(new_config));
+
+        assert!(is_excluded(&message));
+        assert!(!is_excluded(&message2));
+    }
 }
 
 impl TryFrom<SyslogLog> for LogLine {
