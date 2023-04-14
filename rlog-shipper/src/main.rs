@@ -14,9 +14,12 @@ use syslog_server::launch_syslog_udp_server;
 use tokio::select;
 use tracing::Instrument;
 
-use crate::metrics::{
-    GELF_ERROR_COUNT, GELF_PROCESSED_COUNT, GELF_QUEUE_COUNT, SHIPPER_QUEUE_COUNT,
-    SYSLOG_ERROR_COUNT, SYSLOG_PROCESSED_COUNT, SYSLOG_QUEUE_COUNT,
+use crate::{
+    config::CONFIG,
+    metrics::{
+        GELF_ERROR_COUNT, GELF_PROCESSED_COUNT, GELF_QUEUE_COUNT, SHIPPER_QUEUE_COUNT,
+        SYSLOG_ERROR_COUNT, SYSLOG_PROCESSED_COUNT, SYSLOG_QUEUE_COUNT,
+    },
 };
 
 mod config;
@@ -64,11 +67,19 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = dotenv::dotenv() {
         eprintln!("WARN: unable to setup dotenv (.env files): {e}");
     };
+
+    init_logging();
+
     let opts = Opts::parse();
 
     if let Some(path) = opts.config.as_ref() {
         setup_config_from_file(path)?;
     }
+
+    tracing::info!(
+        "Starting rlog-shipper with config:\n{}",
+        serde_yaml::to_string(CONFIG.load().as_ref())?
+    );
 
     let endpoint = Channel::builder(
         Uri::from_str(&opts.grpc_collector_url)
@@ -93,8 +104,6 @@ async fn main() -> anyhow::Result<()> {
         Ok::<_, anyhow::Error>(client_tls_config)
     }?)
     .context("Invalid TLS configuration")?;
-
-    init_logging();
 
     let mut gelf_receiver = launch_gelf_server(&opts.gelf_tcp_bind_address).await?;
 

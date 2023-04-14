@@ -66,6 +66,7 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
             }
 
             for exclusion_filter in &config.load().exclusion_filters {
+                // message will be excluded only if shall_exclude==Some(true)
                 let mut shall_exclude = None;
                 if let (Some(pattern), Some(appname)) = (&exclusion_filter.appname, message.appname)
                 {
@@ -75,12 +76,16 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
                     (&exclusion_filter.facility, message.facility)
                 {
                     shall_exclude = shall_exclude
+                        // previous filter has been applied, it will be excluded only if this filter applies
                         .and_then(|excl| Some(excl && pattern.is_match(facility.as_str())))
+                        // no previous filter in the config!
                         .or_else(|| Some(pattern.is_match(facility.as_str())));
                 }
                 if let Some(pattern) = &exclusion_filter.message {
                     shall_exclude = shall_exclude
+                        // previous filter has been applied, it will be excluded only if this filter applies
                         .and_then(|excl| Some(excl && pattern.is_match(message.msg)))
+                        // no previous filter in the config!
                         .or_else(|| Some(pattern.is_match(message.msg)));
                 }
 

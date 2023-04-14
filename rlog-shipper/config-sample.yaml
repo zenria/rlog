@@ -1,0 +1,39 @@
+# OPTIONAL: output configuration
+grpc_out:
+  # OPTIONAL: maximum size of the output buffer, default: 20000
+  # After conversion to protobuf wire format, all log message are put in this buffer.
+  #
+  # If full and more messages are coming from inputs, they will be discarded
+  max_buffer_size: 100
+
+# OPTIONAL: syslog input configuration
+syslog_in:
+  # OPTIONAL: maximum size of the Syslog input buffer , default: 20000
+  # 
+  # Syslog messages once received and decoded are put in the buffer prior to 
+  # conversion to protobuf wire message
+  #
+  # If full, new messages are discarded
+  max_buffer_size: 200
+
+  # List of exclusion filters to apply to incoming messages
+  #
+  # If any of defined filters is matching the message will be discarded
+  # All filters are defined as Rust Regex on fields "appname", "severity", "message"
+  exclusion_filters:
+    # message with appname matching the following regex will be excluded
+    - appname: "rlog-.*"
+    # message of facility "mail" AND appname "postfix" AND matching message regex will be discarded
+    - facility: "mail"
+      appname: "postfix"
+      message: "(disconnect|connect) from"
+
+# OPTIONAL: GELF input configuration
+gelf_in:
+  # OPTIONAL: maximum size of the GELF input buffer , default: 20000
+  # 
+  # GELF messages once received and decoded are put in the buffer prior to 
+  # conversion to protobuf wire message
+  #
+  # If full, new messages are discarded
+  max_buffer_size: 200

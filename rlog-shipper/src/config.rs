@@ -10,7 +10,7 @@ use arc_swap::ArcSwap;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rlog_common::utils::format_error;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 lazy_static! {
     pub static ref CONFIG: ArcSwap<Config> = ArcSwap::new(Arc::new(Config::default()));
@@ -69,14 +69,14 @@ fn load_config<P: AsRef<Path>>(path: P) -> anyhow::Result<(Config, SystemTime)> 
     ))
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Config {
     pub syslog_in: SyslogInputConfig,
     pub gelf_in: GelfInputConfig,
     pub grpc_out: GrpcOutConfig,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct GrpcOutConfig {
     pub max_buffer_size: usize,
 }
@@ -89,7 +89,7 @@ impl Default for GrpcOutConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct CommonInputConfig {
     /// This will not be hot reloaded (buffer is allocated at the start of the application)
     pub max_buffer_size: usize,
@@ -103,7 +103,7 @@ impl Default for CommonInputConfig {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Serialize)]
 pub struct SyslogInputConfig {
     #[serde(flatten)]
     pub common: CommonInputConfig,
@@ -114,17 +114,17 @@ pub struct SyslogInputConfig {
 ///
 /// If more than one pattern is specified, all the pattern specified must match for
 /// the log entry to be excluded
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Serialize)]
 pub struct SyslogExclusionFilter {
-    #[serde(with = "serde_regex")]
+    #[serde(with = "serde_regex", default, skip_serializing_if = "Option::is_none")]
     pub appname: Option<Regex>,
-    #[serde(with = "serde_regex")]
+    #[serde(with = "serde_regex", default, skip_serializing_if = "Option::is_none")]
     pub facility: Option<Regex>,
-    #[serde(with = "serde_regex")]
+    #[serde(with = "serde_regex", default, skip_serializing_if = "Option::is_none")]
     pub message: Option<Regex>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Serialize)]
 pub struct GelfInputConfig {
     #[serde(flatten)]
     pub common: CommonInputConfig,
