@@ -58,13 +58,6 @@ pub async fn launch_syslog_udp_server(bind_address: &str) -> anyhow::Result<Rece
             tracing::debug!("Received {}", message);
             let message = syslog_loose::parse_message(&message);
 
-            // TODO shall we use exclusion filters here?
-            if message.appname == Some("rlog-shipper") {
-                // Ignore message coming from me in case rlog-shipper output is redirected to
-                // syslogs (typicall if systemd is used)
-                continue;
-            }
-
             if filters::is_excluded(&message) {
                 continue;
             }
