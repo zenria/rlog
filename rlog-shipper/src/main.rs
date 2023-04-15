@@ -5,9 +5,9 @@ use clap::Parser;
 use config::setup_config_from_file;
 use forward_loop::{forward_loop, ForwardMetrics};
 use gelf_server::launch_gelf_server;
+use grpc_out::launch_grpc_shipper;
 use rlog_common::utils::{init_logging, read_file};
 use rlog_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
-use shipper::launch_grpc_shipper;
 use syslog_server::launch_syslog_udp_server;
 use tokio::{join, select, signal::unix::SignalKind};
 use tokio_util::sync::CancellationToken;
@@ -23,8 +23,8 @@ use crate::{
 mod config;
 mod forward_loop;
 mod gelf_server;
+mod grpc_out;
 mod metrics;
-mod shipper;
 mod syslog_server;
 
 /// Collects logs locally and ship them to a remote destination
