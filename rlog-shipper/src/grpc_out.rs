@@ -1,6 +1,5 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
-use futures::FutureExt;
 use rlog_grpc::{
     rlog_service_protocol::{log_collector_client::LogCollectorClient, LogLine},
     tonic::{
@@ -68,13 +67,20 @@ pub fn launch_grpc_shipper(
                                 status.message()
                             );
                         }
+                        Code::OutOfRange => {
+                            // this happens when the message is too large
+                            tracing::error!(
+                                "Unable to send LogLine, collector responded out_of_range, ignoring the log_line: {}",
+                                status.message()
+                            );
+                        }
                         // this covers:
                         // - unavailable upstream (collector reports Unavailable)
                         // - disconnected collector, tonic api report Unaavailble and tries to reconnect
                         //   on the background
                         _ => {
                             tracing::error!(
-                                "Unable to send LogLine, collector unavailable: {}",
+                                "Unable to send LogLine, collector reported an error: {} - {status:?}",
                                 status.message()
                             );
                             // collector unavailable means the upstream (quickwit) is not available
@@ -89,7 +95,7 @@ pub fn launch_grpc_shipper(
                 }
             }
             select! {
-                _ = metrics_report_interval.next().fuse() => {
+                _ = metrics_report_interval.next() => {
                     if let Err(e) = client.report_metrics(Request::new(to_grpc_metrics())).await{
                         tracing::error!("Unable to report metrics: {e}");
                     }
