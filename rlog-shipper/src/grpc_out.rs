@@ -31,6 +31,7 @@ pub fn launch_grpc_shipper(
     let (sender, mut receiver) = channel(CONFIG.load().grpc_out.max_buffer_size);
 
     let handle = tokio::spawn(async move {
+        let mut current_log_line = None;
         loop {
             match async {
                 let mut client = match connect(&endpoint, &shutdown_token).await{
@@ -42,36 +43,37 @@ pub fn launch_grpc_shipper(
                     IntervalStream::new(interval(Duration::from_secs(30)));
 
                 loop {
+                    // send current log_line if any
+                    if let Some(log_line) = current_log_line.take(){
+                        SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
+                        tracing::debug!("Will ship {log_line:#?}");
+                        // do something
+                        let request = Request::new(log_line);
+                        let response: Result<Response<()>, Status> = client.log(request).await;
+                        if let Err(status) = response {
+                            SHIPPER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+                            if status.code() == Code::Unavailable {
+                                tracing::error!(
+                                    "Unable to send LogLine, collector unavailable: {}",
+                                    status.message()
+                                );
+                            } else {
+                                // unhandled error
+                                Err(status).context("unable to send log line to collector")?;
+                            }
+                        } else {
+                            SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
+                        }
+
+                    }
                     select! {
                         _ = metrics_report_interval.next().fuse() => {
                             client.report_metrics(Request::new(to_grpc_metrics())).await.context("Unable to report metrics")?;
                         }
                         log_line = receiver.recv() => {
                             match log_line{
-                                Some(log_line)=> {
-                                    SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
-                                    tracing::debug!("Will ship {log_line:#?}");
-                                    // do something
-                                    let request = Request::new(log_line);
-                                    let response: Result<Response<()>, Status> = client.log(request).await;
-                                    if let Err(status) = response {
-                                        SHIPPER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                                        if status.code() == Code::Unavailable {
-                                            tracing::error!(
-                                                "Unable to send LogLine, collector unavailable: {}",
-                                                status.message()
-                                            );
-                                        } else {
-                                            // unhandled error
-                                            Err(status).context("unable to send log line to collector")?;
-                                        }
-                                    } else {
-                                        SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
-                                    }
-                                }
-                                None => {
-                                    break;
-                                }
+                                Some(log_line)=>  current_log_line = Some(log_line),
+                                None => break,
                             }
                         }
                     }
