@@ -20,14 +20,14 @@ pub fn launch_batch_collector<T: Send + 'static>(
             let max_wait = tokio::time::sleep(max_wait_time);
             select! {
                 _ = shutdown_token.cancelled() => {
-                    // close receiver: at this time, the grpc server
+                    // close the receiver: at this time, the grpc server
                     // will answer "unavailable" to all incoming requests
                     receiver.close();
-                    // drain the receiver for the last batch
+                    // drain the receiver and put it for the last batch
                     while let Some(item) = receiver.recv().await {
                         buffer.push(item);
                     }
-                    // send buffer before & exit
+                    // send buffer & exit
                     send_buffer(&mut buffer, &batch_sender).await;
                     return;
                 }
