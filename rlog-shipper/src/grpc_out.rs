@@ -64,7 +64,7 @@ pub fn launch_grpc_shipper(
                         Code::InvalidArgument => {
                             // invalid log_line, no need to disconnect nor trying to re-send it
                             tracing::error!(
-                                "Unable to send LogLine, collector responded invalid_argument: {}",
+                                "Unable to send LogLine, collector responded invalid_argument: {}\n{log_line:?}",
                                 status.message()
                             );
                         }
