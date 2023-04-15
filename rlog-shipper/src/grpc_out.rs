@@ -1,35 +1,42 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
 use anyhow::Context;
-use futures::{ FutureExt};
+use futures::FutureExt;
 use rlog_common::utils::format_error;
 use rlog_grpc::{
     rlog_service_protocol::{log_collector_client::LogCollectorClient, LogLine},
-    tonic::{transport::Endpoint, Code, Request, Response, Status},
+    tonic::{
+        transport::{Channel, Endpoint},
+        Code, Request, Response, Status,
+    },
 };
 use tokio::{
+    select,
     sync::mpsc::{channel, Sender},
-    time::interval,select, task::JoinHandle
+    task::JoinHandle,
+    time::interval,
 };
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
+use tokio_util::sync::CancellationToken;
 
-use crate::{metrics::{SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT, to_grpc_metrics, SHIPPER_ERROR_COUNT}, config::CONFIG};
+use crate::{
+    config::CONFIG,
+    metrics::{to_grpc_metrics, SHIPPER_ERROR_COUNT, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT},
+};
 
-pub fn launch_grpc_shipper(endpoint: Endpoint) -> (Sender<LogLine>, JoinHandle<()>) {
+pub fn launch_grpc_shipper(
+    endpoint: Endpoint,
+    shutdown_token: CancellationToken,
+) -> (Sender<LogLine>, JoinHandle<()>) {
     let (sender, mut receiver) = channel(CONFIG.load().grpc_out.max_buffer_size);
-
 
     let handle = tokio::spawn(async move {
         loop {
             match async {
-                tracing::info!("Connecting to collector");
-                let channel = endpoint
-                    .connect()
-                    .await
-                    .context("Unable to connect to gRPC endpoint")?;
-                tracing::info!("Connected to collector");
-
-                let mut client = LogCollectorClient::new(channel);
+                let mut client = match connect(&endpoint, &shutdown_token).await{
+                    Some(client) => client,
+                    None => return Ok(()),
+                };
 
                 let mut metrics_report_interval =
                     IntervalStream::new(interval(Duration::from_secs(30)));
@@ -66,7 +73,6 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> (Sender<LogLine>, JoinHandle<(
                                     break;
                                 }
                             }
-                            
                         }
                     }
                 }
@@ -85,11 +91,33 @@ pub fn launch_grpc_shipper(endpoint: Endpoint) -> (Sender<LogLine>, JoinHandle<(
                         "Error connecting/sending to gRPC collector: {}",
                         format_error(e)
                     );
-                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         }
     });
 
-    (sender,handle)
+    (sender, handle)
+}
+
+async fn connect(
+    endpoint: &Endpoint,
+    shutdown_token: &CancellationToken,
+) -> Option<LogCollectorClient<Channel>> {
+    loop {
+        tracing::info!("Connecting to collector");
+        match endpoint.connect().await.map(LogCollectorClient::new) {
+            Ok(client) => {
+                tracing::info!("Connected to collector");
+                return Some(client);
+            }
+            Err(e) => {
+                tracing::error!("Unable to connect to collector gRPC endpoint: {e}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if shutdown_token.is_cancelled() {
+                    // shutdown initiated, stop connection process
+                    return None;
+                }
+            }
+        }
+    }
 }

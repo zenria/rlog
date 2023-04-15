@@ -113,7 +113,8 @@ async fn main() -> anyhow::Result<()> {
         launch_syslog_udp_server(&opts.syslog_udp_bind_address, shutdown_token.child_token())
             .await?;
 
-    let (grpc_log_line_sender, grpc_out) = launch_grpc_shipper(endpoint);
+    let (grpc_log_line_sender, grpc_out) =
+        launch_grpc_shipper(endpoint, shutdown_token.child_token());
     let gelf_in = tokio::spawn(forward_loop(
         gelf_receiver,
         grpc_log_line_sender.clone(),
