@@ -31,7 +31,7 @@ pub fn launch_grpc_shipper(
     let (sender, mut receiver) = channel(CONFIG.load().grpc_out.max_buffer_size);
 
     let handle = tokio::spawn(async move {
-        let mut current_log_line = None;
+        let mut current_log_line: Option<LogLine> = None;
         loop {
             match async {
                 let mut client = match connect(&endpoint, &shutdown_token).await{
@@ -48,23 +48,38 @@ pub fn launch_grpc_shipper(
                         SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
                         tracing::debug!("Will ship {log_line:#?}");
                         // do something
-                        let request = Request::new(log_line);
+                        let request = Request::new(log_line.clone());
                         let response: Result<Response<()>, Status> = client.log(request).await;
                         if let Err(status) = response {
                             SHIPPER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                            if status.code() == Code::Unavailable {
-                                tracing::error!(
-                                    "Unable to send LogLine, collector unavailable: {}",
-                                    status.message()
-                                );
-                            } else {
-                                // unhandled error
-                                Err(status).context("unable to send log line to collector")?;
+                            match status.code() {
+                                Code::InvalidArgument => {
+                                    // invalid log_line, no need to disconnect nor trying to re-send the
+                                    tracing::error!(
+                                        "Unable to send LogLine, collector responded invalid_argument: {}",
+                                        status.message()
+                                    );
+                                }
+                                Code::Unavailable => {
+                                    tracing::error!(
+                                        "Unable to send LogLine, collector unavailable: {}",
+                                        status.message()
+                                    );
+                                    // collector unvailable means the upstream (quickwit) is not available
+                                    // wait a bit before trying to send again the log line
+                                    tokio::time::sleep(Duration::from_secs(1)).await;
+                                    current_log_line = Some(log_line);
+                                    continue;
+                                }
+                                _ => {
+                                    // unhandled error, disconnect ; and try to re-send log line
+                                    current_log_line = Some(log_line);
+                                    Err(status).context("unable to send log line to collector")?;
+                                }
                             }
                         } else {
                             SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
                         }
-
                     }
                     select! {
                         _ = metrics_report_interval.next().fuse() => {
