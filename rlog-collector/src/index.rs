@@ -1,24 +1,15 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context};
-use futures::TryFutureExt;
-use reqwest::{Client, Url};
-use rlog_common::utils::format_error;
-use rlog_grpc::{
-    rlog_service_protocol::{LogLine, Metrics},
-    tonic::{self, async_trait, Status},
-    OTELSeverity,
-};
+use itertools::Itertools;
+use reqwest::{Client, StatusCode, Url};
+use rlog_grpc::{rlog_service_protocol::LogLine, OTELSeverity};
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
+use tokio::sync::mpsc::Receiver;
 
-use crate::{
-    http_status_server::report_connected_host,
-    metrics::{
-        COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
-        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE, SHIPPER_ERROR_COUNT, SHIPPER_PROCESSED_COUNT,
-        SHIPPER_QUEUE_COUNT,
-    },
+use crate::metrics::{
+    COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
+    OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE, OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
 };
 
 #[derive(Serialize, Debug)]
@@ -46,133 +37,106 @@ pub struct IndexLogEntry {
     free_fields: HashMap<String, serde_json::Value>,
 }
 
-pub struct IndexLogCollectorServer {
-    ingest_url: Url,
-    http_client: Client,
-}
+pub fn launch_index_loop(
+    quickwit_rest_url: &str,
+    index_id: &str,
+    mut batch_receiver: Receiver<Vec<IndexLogEntry>>,
+) -> anyhow::Result<()> {
+    // parse url & setup http client
+    let quickwit_rest_url: Url = quickwit_rest_url
+        .parse()
+        .context("invalid quickwit REST url")?;
+    let ingest_url = quickwit_rest_url.join(&format!("api/v1/{index_id}/ingest"))?;
+    let http_client = Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .build()?;
 
-impl IndexLogCollectorServer {
-    pub fn new(quickwit_rest_url: &str, index_id: &str) -> anyhow::Result<Self> {
-        let quickwit_rest_url: Url = quickwit_rest_url
-            .parse()
-            .context("invalid quickwit REST url")?;
-        let ingest_url = quickwit_rest_url.join(&format!("api/v1/{index_id}/ingest"))?;
-        let http_client = Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .build()?;
-        Ok(Self {
-            ingest_url,
-            http_client,
-        })
-    }
-}
-#[async_trait]
-impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector
-    for IndexLogCollectorServer
-{
-    #[instrument(skip(self, request))]
-    async fn log(
-        &self,
-        request: tonic::Request<LogLine>,
-    ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
-        let log_line = request.into_inner();
-
-        tracing::debug!("Received {log_line:#?}");
-
-        let log_entry = IndexLogEntry::try_from(log_line)
-            // Reject the request if the received LogLine is invalid
-            .map_err(|e| {
-                Status::invalid_argument(format!("Invalid LogLine {}", format_error(e)))
-            })?;
-
-        tracing::debug!("Converted to {log_entry:#?}");
-
-        // TODO decorrelate sending logs to quickwit from request handler (handler should never fail)
-
-        match async {
-            Ok::<QuickwitIngestResponse, Status>(
-                self.http_client
-                    .post(self.ingest_url.clone())
-                    .json(&log_entry)
+    tokio::spawn(async move {
+        let mut batch_to_send: Option<String> = None;
+        let mut batch_count = 0;
+        loop {
+            if let Some(body) = batch_to_send.take() {
+                tracing::debug!("Sending to quickwit {batch_count} items:\n{body}");
+                // send the stuff
+                match http_client
+                    .post(ingest_url.clone())
+                    .body(body.clone())
                     .send()
-                    .map_err(|e| Status::unavailable(e.to_string()))
-                    .await?
-                    .error_for_status()
-                    .map_err(|e| Status::unavailable(e.to_string()))?
-                    .json::<QuickwitIngestResponse>()
                     .await
-                    .map_err(|e| Status::unavailable(e.to_string()))?,
-            )
-        }
-        .await
-        {
-            Ok(_) => {
-                // NOTE: quickwit will not throw errors of the submitted document is not valid in respect with the index schema
-                tracing::debug!("Indexed {log_entry:#?}");
-                COLLECTOR_OUTPUT_COUNT
-                    .with_label_values(&[
-                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
-                        OUTPUT_STATUS_OK_LABEL_VALUE,
-                    ])
-                    .inc();
+                {
+                    Ok(quickwit_response) => {
+                        match quickwit_response.status() {
+                            StatusCode::OK => {
+                                // consume response
+                                let _response = quickwit_response.text().await;
+                                tracing::debug!("OK");
+                                COLLECTOR_OUTPUT_COUNT
+                                    .with_label_values(&[
+                                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                        OUTPUT_STATUS_OK_LABEL_VALUE,
+                                    ])
+                                    .inc_by(batch_count);
+                                // nothing to do here, this has been successfully accepted by quickwit
+                            }
+                            StatusCode::TOO_MANY_REQUESTS => {
+                                // consume response
+                                let _response = quickwit_response.text().await;
+                                tracing::warn!(
+                                    "Quickwit overloaded (429), wait 5 seconds before retrying"
+                                );
+                                batch_to_send = Some(body);
+                                COLLECTOR_OUTPUT_COUNT
+                                    .with_label_values(&[
+                                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                        OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE,
+                                    ])
+                                    .inc();
+                                tokio::time::sleep(Duration::from_secs(5)).await;
+                                continue;
+                            }
+                            other => {
+                                let response = quickwit_response.text().await;
+                                tracing::error!("Unhandled status code {other} - {response:?}");
+                                // retry batch
+                                batch_to_send = Some(body);
+                                COLLECTOR_OUTPUT_COUNT
+                                    .with_label_values(&[
+                                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                        OUTPUT_STATUS_ERROR_LABEL_VALUE,
+                                    ])
+                                    .inc();
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                continue;
+                            }
+                        }
+                    }
+                    Err(quickwit_error) => {
+                        // connect error or some low level error, we must retry
+                        tracing::error!(
+                            "Error sending batch to quickwit, retry in 1s - {quickwit_error}"
+                        );
+                        batch_to_send = Some(body);
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                }
             }
-            Err(e) => {
-                tracing::error!("Unable to index logs to quickwit {e}");
-                COLLECTOR_OUTPUT_COUNT
-                    .with_label_values(&[
-                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
-                        OUTPUT_STATUS_ERROR_LABEL_VALUE,
-                    ])
-                    .inc();
-                Err(e)?;
+            match batch_receiver.recv().await {
+                Some(batch) => {
+                    batch_count = batch.len() as u64;
+                    let body = batch
+                        .into_iter()
+                        .map(|j| serde_json::to_string(&j).unwrap())
+                        .join("\n");
+                    batch_to_send = Some(body);
+                }
+                // channel close (server shutdown)
+                None => break,
             }
         }
+    });
 
-        Ok(tonic::Response::new(()))
-    }
-    #[instrument(skip(self, request))]
-    async fn report_metrics(
-        &self,
-        request: tonic::Request<Metrics>,
-    ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
-        let metrics = request.into_inner();
-        tracing::debug!("{metrics:#?}");
-        report_connected_host(&metrics.hostname).await;
-
-        for (queue_name, count) in metrics.queue_count {
-            SHIPPER_QUEUE_COUNT
-                .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
-                .unwrap()
-                .set(count as i64);
-        }
-
-        for (queue_name, count) in metrics.processed_count {
-            let counter = SHIPPER_PROCESSED_COUNT
-                .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
-                .unwrap();
-            let current = counter.get();
-            if count > current {
-                counter.inc_by(count - current);
-            } else {
-                counter.reset();
-                counter.inc_by(count);
-            }
-        }
-        for (queue_name, count) in metrics.error_count {
-            let counter = SHIPPER_ERROR_COUNT
-                .get_metric_with_label_values(&[&metrics.hostname, &queue_name])
-                .unwrap();
-            let current = counter.get();
-            if count > current {
-                counter.inc_by(count - current);
-            } else {
-                counter.reset();
-                counter.inc_by(count);
-            }
-        }
-
-        Ok(tonic::Response::new(()))
-    }
+    Ok(())
 }
 
 #[derive(Deserialize)]

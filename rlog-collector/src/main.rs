@@ -7,9 +7,12 @@ use rlog_grpc::{
     rlog_service_protocol::log_collector_server::LogCollectorServer,
     tonic::transport::{Certificate, Identity, Server, ServerTlsConfig},
 };
+use tokio_util::sync::CancellationToken;
 
-use crate::{index::IndexLogCollectorServer, metrics::launch_async_process_collector};
+use crate::metrics::launch_async_process_collector;
 
+mod batch;
+mod grpc_server;
 mod http_status_server;
 mod index;
 mod metrics;
@@ -77,11 +80,21 @@ async fn main() -> anyhow::Result<()> {
 
     http_status_server::launch_server(&opts.http_status_bind_address, &opts.quickwit_rest_url)?;
 
+    let shutdown_token = CancellationToken::new();
+
+    let (log_sender, batch_log_receiver) =
+        batch::launch_batch_collector(Duration::from_secs(1), 100, shutdown_token.child_token());
+
+    index::launch_index_loop(
+        &opts.quickwit_rest_url,
+        &opts.quickwit_index_id,
+        batch_log_receiver,
+    )?;
+
     server
-        .add_service(LogCollectorServer::new(IndexLogCollectorServer::new(
-            &opts.quickwit_rest_url,
-            &opts.quickwit_index_id,
-        )?))
+        .add_service(LogCollectorServer::new(
+            grpc_server::LogCollectorServer::new(log_sender),
+        ))
         .serve(addr)
         .await?;
 

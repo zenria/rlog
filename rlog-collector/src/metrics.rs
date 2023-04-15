@@ -35,6 +35,7 @@ lazy_static! {
 
 pub const OUTPUT_STATUS_OK_LABEL_VALUE: &str = "ok";
 pub const OUTPUT_STATUS_ERROR_LABEL_VALUE: &str = "error";
+pub const OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE: &str = "toomany";
 pub const OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE: &str = "quickwit";
 
 /// Generate the content of /metrics prometheus metrics gathering endpoint.
