@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
     let shutdown_token = CancellationToken::new();
 
     let (log_sender, batch_log_receiver) =
-        batch::launch_batch_collector(Duration::from_secs(100), 100, shutdown_token.child_token());
+        batch::launch_batch_collector(Duration::from_secs(1), 100, shutdown_token.child_token());
 
     let indexer_handle = index::launch_index_loop(
         &opts.quickwit_rest_url,
