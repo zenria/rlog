@@ -5,7 +5,7 @@ use itertools::Itertools;
 use reqwest::{Client, StatusCode, Url};
 use rlog_grpc::{rlog_service_protocol::LogLine, OTELSeverity};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::Receiver;
+use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::metrics::{
     COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
@@ -41,7 +41,7 @@ pub fn launch_index_loop(
     quickwit_rest_url: &str,
     index_id: &str,
     mut batch_receiver: Receiver<Vec<IndexLogEntry>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<JoinHandle<()>> {
     // parse url & setup http client
     let quickwit_rest_url: Url = quickwit_rest_url
         .parse()
@@ -51,7 +51,7 @@ pub fn launch_index_loop(
         .connect_timeout(Duration::from_secs(5))
         .build()?;
 
-    tokio::spawn(async move {
+    Ok(tokio::spawn(async move {
         let mut batch_to_send: Option<String> = None;
         let mut batch_count = 0;
         loop {
@@ -134,9 +134,7 @@ pub fn launch_index_loop(
                 None => break,
             }
         }
-    });
-
-    Ok(())
+    }))
 }
 
 #[derive(Deserialize)]

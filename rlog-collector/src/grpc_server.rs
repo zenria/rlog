@@ -3,7 +3,6 @@ use rlog_grpc::{
     rlog_service_protocol::{LogLine, Metrics},
     tonic::{self, async_trait, Status},
 };
-use serde::Serialize;
 use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 
@@ -12,13 +11,6 @@ use crate::{
     index::IndexLogEntry,
     metrics::{SHIPPER_ERROR_COUNT, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT},
 };
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "lowercase")]
-enum LogSystem {
-    Syslog,
-    Gelf,
-}
 
 pub struct LogCollectorServer {
     /// each IndexLogEntry will be sent here
@@ -49,7 +41,7 @@ impl rlog_grpc::rlog_service_protocol::log_collector_server::LogCollector for Lo
 
         tracing::debug!("Converted to {log_entry:#?}");
 
-        if let Err(e) = self.sender.send(log_entry).await {
+        if let Err(_e) = self.sender.send(log_entry).await {
             Err(tonic::Status::unavailable("shutdown in progress"))
         } else {
             Ok(tonic::Response::new(()))

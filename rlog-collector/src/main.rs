@@ -7,6 +7,7 @@ use rlog_grpc::{
     rlog_service_protocol::log_collector_server::LogCollectorServer,
     tonic::transport::{Certificate, Identity, Server, ServerTlsConfig},
 };
+use tokio::{join, select, signal::unix::SignalKind};
 use tokio_util::sync::CancellationToken;
 
 use crate::metrics::launch_async_process_collector;
@@ -20,7 +21,7 @@ mod metrics;
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
 struct Opts {
-    /// trusted CA certficate used for mTLS connection
+    /// trusted CA certificate used for mTLS connection
     #[arg(long, env)]
     tls_ca_certificate: String,
     /// private key used for mTLS connection
@@ -83,13 +84,35 @@ async fn main() -> anyhow::Result<()> {
     let shutdown_token = CancellationToken::new();
 
     let (log_sender, batch_log_receiver) =
-        batch::launch_batch_collector(Duration::from_secs(1), 100, shutdown_token.child_token());
+        batch::launch_batch_collector(Duration::from_secs(100), 100, shutdown_token.child_token());
 
-    index::launch_index_loop(
+    let indexer_handle = index::launch_index_loop(
         &opts.quickwit_rest_url,
         &opts.quickwit_index_id,
         batch_log_receiver,
     )?;
+
+    tokio::spawn(async move {
+        let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
+        select! {
+            _ = tokio::signal::ctrl_c() => {
+                tracing::debug!("CTRL-C PRESSED!");
+            }
+            _ = sigterm.recv() => {
+                tracing::debug!("Received SIGTERM");
+            }
+        }
+        tracing::info!("Request to shutdown received, initiating graceful shutdown.");
+        shutdown_token.cancel();
+        // we only need to wait for the indexer task to terminate
+        // the shutdown_token will properly terminate the batch task this will
+        // - close the batch channel after laft batch
+        // - close the send channel to the batch task, the server will
+        //   always answer "unavailable" to shippers
+        let _ = join!(indexer_handle);
+        tracing::info!("All tasks successfully exited!");
+        std::process::exit(0);
+    });
 
     server
         .add_service(LogCollectorServer::new(
