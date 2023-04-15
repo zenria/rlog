@@ -1,14 +1,12 @@
-use std::{str::FromStr, sync::atomic::Ordering, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
 use config::setup_config_from_file;
+use forward_loop::{forward_loop, ForwardMetrics};
 use gelf_server::launch_gelf_server;
-use rlog_common::utils::{format_error, init_logging, read_file};
-use rlog_grpc::{
-    rlog_service_protocol::LogLine,
-    tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri},
-};
+use rlog_common::utils::{init_logging, read_file};
+use rlog_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
 use shipper::launch_grpc_shipper;
 use syslog_server::launch_syslog_udp_server;
 use tokio::{join, select, signal::unix::SignalKind};
@@ -23,6 +21,7 @@ use crate::{
 };
 
 mod config;
+mod forward_loop;
 mod gelf_server;
 mod metrics;
 mod shipper;
@@ -107,66 +106,38 @@ async fn main() -> anyhow::Result<()> {
     }?)
     .context("Invalid TLS configuration")?;
 
-    let mut gelf_receiver =
+    let gelf_receiver =
         launch_gelf_server(&opts.gelf_tcp_bind_address, shutdown_token.child_token()).await?;
 
-    let mut syslog_receiver =
+    let syslog_receiver =
         launch_syslog_udp_server(&opts.syslog_udp_bind_address, shutdown_token.child_token())
             .await?;
 
     let (grpc_log_line_sender, grpc_out) = launch_grpc_shipper(endpoint);
+    let gelf_in = tokio::spawn(forward_loop(
+        gelf_receiver,
+        grpc_log_line_sender.clone(),
+        "gelf_in",
+        ForwardMetrics {
+            in_queue_size: &GELF_QUEUE_COUNT,
+            in_processed_count: &GELF_PROCESSED_COUNT,
+            in_error_count: &GELF_ERROR_COUNT,
+            out_queue_size: &SHIPPER_QUEUE_COUNT,
+        },
+    ));
 
-    let gelf_in = tokio::spawn({
-        let grpc_log_line_sender = grpc_log_line_sender.clone();
-        async move {
-            while let Some(gelf_log) = gelf_receiver.recv().await {
-                GELF_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
-                GELF_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
-                // construct a valid LogLine from gelf stuff
-                let log_line = match LogLine::try_from(gelf_log) {
-                    Ok(l) => l,
-                    Err(e) => {
-                        GELF_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                        tracing::error!("received an invalid GELF log! {}", format_error(e));
-                        continue;
-                    }
-                };
-                // if the channel is full, is will block here ; filling channels from each
-                // server (syslog & gelf), when those channel will be full, new messages will be discarded
-                if let Err(e) = grpc_log_line_sender.send(log_line).await {
-                    tracing::error!("Channel closed! {e}");
-                    break;
-                } else {
-                    SHIPPER_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            tracing::info!("GELF input channel closed, GELF forward task stopped.");
-        }
-    });
-    let syslog_in = tokio::spawn(async move {
-        while let Some(syslog) = syslog_receiver.recv().await {
-            SYSLOG_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
-            SYSLOG_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
-            // construct a valid LogLine from gelf stuff
-            let log_line = match LogLine::try_from(syslog) {
-                Ok(l) => l,
-                Err(e) => {
-                    SYSLOG_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                    tracing::error!("received an invalid Syslog log! {}", format_error(e));
-                    continue;
-                }
-            };
-            // if the channel is full, is will block here ; filling channels from each
-            // server (syslog & gelf), when those channel will be full, new messages will be discarded
-            if let Err(e) = grpc_log_line_sender.send(log_line).await {
-                tracing::error!("Channel closed! {e}");
-                break;
-            } else {
-                SHIPPER_QUEUE_COUNT.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-        tracing::info!("Syslog input channel closed, Syslog forward task stopped.");
-    });
+    let syslog_in = tokio::spawn(forward_loop(
+        syslog_receiver,
+        grpc_log_line_sender.clone(),
+        "syslog_in",
+        ForwardMetrics {
+            in_queue_size: &SYSLOG_QUEUE_COUNT,
+            in_processed_count: &SYSLOG_PROCESSED_COUNT,
+            in_error_count: &SYSLOG_ERROR_COUNT,
+            out_queue_size: &SHIPPER_QUEUE_COUNT,
+        },
+    ));
+    drop(grpc_log_line_sender);
 
     let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
     select! {

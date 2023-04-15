@@ -1638,6 +1638,7 @@ dependencies = [
  "rlog-grpc",
  "sled",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

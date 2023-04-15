@@ -12,4 +12,5 @@ atty="0.2"
 tracing-subscriber = {version="0.3", features=["env-filter"]}
 tracing="0.1"
 sled="0.34"
-tokio={version="1", features=["macros", "rt-multi-thread", "sync", "time"]}
+tokio={version="1", features=["macros", "rt-multi-thread", "sync", "time", "signal"]}
+tokio-util="0.7"
