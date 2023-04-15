@@ -1,8 +1,6 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
-use anyhow::Context;
 use futures::FutureExt;
-use rlog_common::utils::format_error;
 use rlog_grpc::{
     rlog_service_protocol::{log_collector_client::LogCollectorClient, LogLine},
     tonic::{
@@ -32,82 +30,75 @@ pub fn launch_grpc_shipper(
 
     let handle = tokio::spawn(async move {
         let mut current_log_line: Option<LogLine> = None;
+
+        // Connect to remote endpoint
+        //
+        // Note: once connected, if it gets disconnected, tonic will try to reconnect in background
+        // there is no need to manually reconnect it.
+        //
+        // This is utterly odd: the tonic api answer as if the remote endpoint sent a "Unavailable"
+        // code. Not sure if it's a gRPC idiom but it is very confusing.
+
+        let mut client = match connect(&endpoint, &shutdown_token).await {
+            Some(client) => client,
+            None => return,
+        };
+
+        let mut metrics_report_interval = IntervalStream::new(interval(Duration::from_secs(30)));
+
         loop {
-            match async {
-                let mut client = match connect(&endpoint, &shutdown_token).await{
-                    Some(client) => client,
-                    None => return Ok(()),
-                };
-
-                let mut metrics_report_interval =
-                    IntervalStream::new(interval(Duration::from_secs(30)));
-
-                loop {
-                    // send current log_line if any
-                    if let Some(log_line) = current_log_line.take(){
-                        SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
-                        tracing::debug!("Will ship {log_line:#?}");
-                        // do something
-                        let request = Request::new(log_line.clone());
-                        let response: Result<Response<()>, Status> = client.log(request).await;
-                        if let Err(status) = response {
-                            SHIPPER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-                            match status.code() {
-                                Code::InvalidArgument => {
-                                    // invalid log_line, no need to disconnect nor trying to re-send it
-                                    tracing::error!(
-                                        "Unable to send LogLine, collector responded invalid_argument: {}",
-                                        status.message()
-                                    );
-                                }
-                                Code::Unavailable => {
-                                    tracing::error!(
-                                        "Unable to send LogLine, collector unavailable: {}",
-                                        status.message()
-                                    );
-                                    // collector unvailable means the upstream (quickwit) is not available
-                                    // wait a bit before trying to send again the log line
-                                    tokio::time::sleep(Duration::from_secs(1)).await;
-                                    current_log_line = Some(log_line);
-                                    continue;
-                                }
-                                _ => {
-                                    // unhandled error, disconnect ; and try to re-send log line
-                                    current_log_line = Some(log_line);
-                                    Err(status).context("unable to send log line to collector")?;
-                                }
-                            }
-                        } else {
-                            SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                    select! {
-                        _ = metrics_report_interval.next().fuse() => {
-                            client.report_metrics(Request::new(to_grpc_metrics())).await.context("Unable to report metrics")?;
-                        }
-                        log_line = receiver.recv() => {
-                            match log_line{
-                                Some(log_line)=>  current_log_line = Some(log_line),
-                                None => break,
-                            }
-                        }
-                    }
-                }
-
-                Ok::<_, anyhow::Error>(())
+            if shutdown_token.is_cancelled() {
+                // early return to allow to exit if a log is being retried with a dead collector
+                return;
             }
-            .await
-            {
-                Ok(_) => {
-                    // this should not happen (by construction)
-                    tracing::info!("gelf_out channel closed, shutting down GELF output");
-                    return;
+            // send current log_line if any
+            if let Some(log_line) = current_log_line.take() {
+                SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
+                tracing::debug!("Will ship {log_line:#?}");
+                // do something
+                let request = Request::new(log_line.clone());
+                let response: Result<Response<()>, Status> = client.log(request).await;
+                if let Err(status) = response {
+                    SHIPPER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+                    match status.code() {
+                        Code::InvalidArgument => {
+                            // invalid log_line, no need to disconnect nor trying to re-send it
+                            tracing::error!(
+                                "Unable to send LogLine, collector responded invalid_argument: {}",
+                                status.message()
+                            );
+                        }
+                        // this covers:
+                        // - unavailable upstream (collector reports Unavailable)
+                        // - disconnected collector, tonic api report Unaavailble and tries to reconnect
+                        //   on the background
+                        _ => {
+                            tracing::error!(
+                                "Unable to send LogLine, collector unavailable: {}",
+                                status.message()
+                            );
+                            // collector unavailable means the upstream (quickwit) is not available
+                            // wait a bit before trying to send again the log line
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            current_log_line = Some(log_line);
+                            continue;
+                        }
+                    }
+                } else {
+                    SHIPPER_PROCESSED_COUNT.fetch_add(1, Ordering::Relaxed);
                 }
-                Err(e) => {
-                    tracing::error!(
-                        "Error connecting/sending to gRPC collector: {}",
-                        format_error(e)
-                    );
+            }
+            select! {
+                _ = metrics_report_interval.next().fuse() => {
+                    if let Err(e) = client.report_metrics(Request::new(to_grpc_metrics())).await{
+                        tracing::error!("Unable to report metrics: {e}");
+                    }
+                }
+                log_line = receiver.recv() => {
+                    match log_line{
+                        Some(log_line)=>  current_log_line = Some(log_line),
+                        None => break,
+                    }
                 }
             }
         }
