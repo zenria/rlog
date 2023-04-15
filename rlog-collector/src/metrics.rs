@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use lazy_static::lazy_static;
 use prometheus::{
-    register_int_counter_vec, register_int_gauge_vec, Encoder, IntCounterVec, IntGaugeVec,
-    TextEncoder,
+    register_int_counter, register_int_counter_vec, register_int_gauge_vec, Encoder, IntCounter,
+    IntCounterVec, IntGaugeVec, TextEncoder,
 };
 
 lazy_static! {
@@ -25,9 +25,14 @@ lazy_static! {
         &["hostname", "queue_name"]
     )
     .unwrap();
-    pub(crate) static ref COLLECTOR_OUTPUT_COUNT: IntCounterVec = register_int_counter_vec!(
-        "rlog_collector_output_count",
+    pub(crate) static ref COLLECTOR_INDEXED_COUNT: IntCounter = register_int_counter!(
+        "rlog_collector_indexed_count",
         "Number of elements output to various systems",
+    )
+    .unwrap();
+    pub(crate) static ref COLLECTOR_OUTPUT_COUNT: IntCounterVec = register_int_counter_vec!(
+        "rlog_collector_output_request_count",
+        "Number of output requests",
         &["system", "status"]
     )
     .unwrap();

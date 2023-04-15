@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::metrics::{
-    COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE, OUTPUT_STATUS_OK_LABEL_VALUE,
-    OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE, OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+    COLLECTOR_INDEXED_COUNT, COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE,
+    OUTPUT_STATUS_OK_LABEL_VALUE, OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE,
+    OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
 };
 
 #[derive(Serialize, Debug)]
@@ -70,12 +71,13 @@ pub fn launch_index_loop(
                                 // consume response
                                 let _response = quickwit_response.text().await;
                                 tracing::debug!("OK");
+                                COLLECTOR_INDEXED_COUNT.inc_by(batch_count);
                                 COLLECTOR_OUTPUT_COUNT
                                     .with_label_values(&[
                                         OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
                                         OUTPUT_STATUS_OK_LABEL_VALUE,
                                     ])
-                                    .inc_by(batch_count);
+                                    .inc();
                                 // nothing to do here, this has been successfully accepted by quickwit
                             }
                             StatusCode::TOO_MANY_REQUESTS => {
