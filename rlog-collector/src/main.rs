@@ -2,22 +2,12 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
+use rlog_collector::{CollectorServer, CollectorServerConfig};
 use rlog_common::utils::{init_logging, read_file};
-use rlog_grpc::{
-    rlog_service_protocol::log_collector_server::LogCollectorServer,
-    tonic::transport::{Certificate, Identity, Server, ServerTlsConfig},
-};
-use tokio::{join, select, signal::unix::SignalKind};
-use tokio_util::sync::CancellationToken;
+use rlog_grpc::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
+use tokio::{select, signal::unix::SignalKind};
 
-use crate::metrics::launch_async_process_collector;
-
-mod batch;
-mod config;
-mod grpc_server;
-mod http_status_server;
-mod index;
-mod metrics;
+use rlog_collector::metrics::launch_async_process_collector;
 
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
@@ -57,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
 
     launch_async_process_collector(Duration::from_millis(500));
 
-    let mut server = Server::builder()
+    let server = Server::builder()
         // always setup tcp keepalive
         .tcp_keepalive(Some(Duration::from_secs(25)))
         // tls config
@@ -73,54 +63,25 @@ async fn main() -> anyhow::Result<()> {
         )
         .context("Invalid TLS configuration")?;
 
-    let addr = opts
-        .grpc_bind_address
-        .parse()
-        .context("Invalid grpc bind address")?;
+    let collector_server = CollectorServer::start_collector_server(CollectorServerConfig {
+        http_status_bind_address: opts.http_status_bind_address,
+        grpc_bind_address: opts.grpc_bind_address,
+        quickwit_rest_url: opts.quickwit_rest_url,
+        quickwit_index_id: opts.quickwit_index_id,
+        server,
+    })?;
 
-    tracing::info!("Starting rlog-collector gRPC server at {addr}");
-
-    http_status_server::launch_server(&opts.http_status_bind_address, &opts.quickwit_rest_url)?;
-
-    let shutdown_token = CancellationToken::new();
-
-    let (log_sender, batch_log_receiver) =
-        batch::launch_batch_collector(Duration::from_secs(1), 100, shutdown_token.child_token());
-
-    let indexer_handle = index::launch_index_loop(
-        &opts.quickwit_rest_url,
-        &opts.quickwit_index_id,
-        batch_log_receiver,
-    )?;
-
-    tokio::spawn(async move {
-        let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
-        select! {
-            _ = tokio::signal::ctrl_c() => {
-                tracing::debug!("CTRL-C PRESSED!");
-            }
-            _ = sigterm.recv() => {
-                tracing::debug!("Received SIGTERM");
-            }
+    let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
+    select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::debug!("CTRL-C PRESSED!");
         }
-        tracing::info!("Request to shutdown received, initiating graceful shutdown.");
-        shutdown_token.cancel();
-        // we only need to wait for the indexer task to terminate
-        // the shutdown_token will properly terminate the batch task this will
-        // - close the batch channel after laft batch
-        // - close the send channel to the batch task, the server will
-        //   always answer "unavailable" to shippers
-        let _ = join!(indexer_handle);
-        tracing::info!("All tasks successfully exited!");
-        std::process::exit(0);
-    });
-
-    server
-        .add_service(LogCollectorServer::new(
-            grpc_server::LogCollectorServer::new(log_sender),
-        ))
-        .serve(addr)
-        .await?;
-
+        _ = sigterm.recv() => {
+            tracing::debug!("Received SIGTERM");
+        }
+    }
+    tracing::info!("Request to shutdown received, initiating graceful shutdown.");
+    collector_server.shutdown().await;
+    tracing::info!("All tasks successfully exited!");
     Ok(())
 }
