@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::metrics::launch_async_process_collector;
 
 mod batch;
+mod config;
 mod grpc_server;
 mod http_status_server;
 mod index;

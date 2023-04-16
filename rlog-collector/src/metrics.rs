@@ -7,30 +7,30 @@ use prometheus::{
 };
 
 lazy_static! {
-    pub(crate) static ref SHIPPER_QUEUE_COUNT: IntGaugeVec = register_int_gauge_vec!(
+    pub static ref SHIPPER_QUEUE_COUNT: IntGaugeVec = register_int_gauge_vec!(
         "rlog_shipper_queue_count",
         "Number of elements buffered in queues",
         &["hostname", "queue_name"]
     )
     .unwrap();
-    pub(crate) static ref SHIPPER_PROCESSED_COUNT: IntCounterVec = register_int_counter_vec!(
+    pub static ref SHIPPER_PROCESSED_COUNT: IntCounterVec = register_int_counter_vec!(
         "rlog_shipper_processed_count",
         "Number of elements buffered in queues",
         &["hostname", "queue_name"]
     )
     .unwrap();
-    pub(crate) static ref SHIPPER_ERROR_COUNT: IntCounterVec = register_int_counter_vec!(
+    pub static ref SHIPPER_ERROR_COUNT: IntCounterVec = register_int_counter_vec!(
         "rlog_shipper_error_count",
         "Number of elements in error in queues",
         &["hostname", "queue_name"]
     )
     .unwrap();
-    pub(crate) static ref COLLECTOR_INDEXED_COUNT: IntCounter = register_int_counter!(
+    pub static ref COLLECTOR_INDEXED_COUNT: IntCounter = register_int_counter!(
         "rlog_collector_indexed_count",
         "Number of elements output to various systems",
     )
     .unwrap();
-    pub(crate) static ref COLLECTOR_OUTPUT_COUNT: IntCounterVec = register_int_counter_vec!(
+    pub static ref COLLECTOR_OUTPUT_COUNT: IntCounterVec = register_int_counter_vec!(
         "rlog_collector_output_request_count",
         "Number of output requests",
         &["system", "status"]

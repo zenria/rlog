@@ -5,14 +5,14 @@ use std::sync::atomic::Ordering;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 
-pub(crate) struct ForwardMetrics {
-    pub(crate) in_queue_size: &'static AtomicU64,
-    pub(crate) in_processed_count: &'static AtomicU64,
-    pub(crate) in_error_count: &'static AtomicU64,
-    pub(crate) out_queue_size: &'static AtomicU64,
+pub struct ForwardMetrics {
+    pub in_queue_size: &'static AtomicU64,
+    pub in_processed_count: &'static AtomicU64,
+    pub in_error_count: &'static AtomicU64,
+    pub out_queue_size: &'static AtomicU64,
 }
 
-pub(crate) async fn forward_loop<T>(
+pub async fn forward_loop<T>(
     mut input: Receiver<T>,
     grpc_out: Sender<LogLine>,
     input_name: &str,

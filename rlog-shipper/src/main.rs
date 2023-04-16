@@ -2,30 +2,13 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
-use config::setup_config_from_file;
-use forward_loop::{forward_loop, ForwardMetrics};
-use gelf_server::launch_gelf_server;
-use grpc_out::launch_grpc_shipper;
 use rlog_common::utils::{init_logging, read_file};
 use rlog_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
-use syslog_server::launch_syslog_udp_server;
-use tokio::{join, select, signal::unix::SignalKind};
-use tokio_util::sync::CancellationToken;
-
-use crate::{
-    config::CONFIG,
-    metrics::{
-        GELF_ERROR_COUNT, GELF_PROCESSED_COUNT, GELF_QUEUE_COUNT, SHIPPER_QUEUE_COUNT,
-        SYSLOG_ERROR_COUNT, SYSLOG_PROCESSED_COUNT, SYSLOG_QUEUE_COUNT,
-    },
+use rlog_shipper::{
+    config::{setup_config_from_file, CONFIG},
+    ServerConfig, ShipperServer,
 };
-
-mod config;
-mod forward_loop;
-mod gelf_server;
-mod grpc_out;
-mod metrics;
-mod syslog_server;
+use tokio::{select, signal::unix::SignalKind};
 
 /// Collects logs locally and ship them to a remote destination
 #[derive(Debug, Parser)]
@@ -63,8 +46,6 @@ struct Opts {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let shutdown_token = CancellationToken::new();
-
     if let Err(e) = dotenv::dotenv() {
         eprintln!("WARN: unable to setup dotenv (.env files): {e}");
     };
@@ -106,39 +87,12 @@ async fn main() -> anyhow::Result<()> {
     }?)
     .context("Invalid TLS configuration")?;
 
-    let gelf_receiver =
-        launch_gelf_server(&opts.gelf_tcp_bind_address, shutdown_token.child_token()).await?;
-
-    let syslog_receiver =
-        launch_syslog_udp_server(&opts.syslog_udp_bind_address, shutdown_token.child_token())
-            .await?;
-
-    let (grpc_log_line_sender, grpc_out) =
-        launch_grpc_shipper(endpoint, shutdown_token.child_token());
-    let gelf_in = tokio::spawn(forward_loop(
-        gelf_receiver,
-        grpc_log_line_sender.clone(),
-        "gelf_in",
-        ForwardMetrics {
-            in_queue_size: &GELF_QUEUE_COUNT,
-            in_processed_count: &GELF_PROCESSED_COUNT,
-            in_error_count: &GELF_ERROR_COUNT,
-            out_queue_size: &SHIPPER_QUEUE_COUNT,
-        },
-    ));
-
-    let syslog_in = tokio::spawn(forward_loop(
-        syslog_receiver,
-        grpc_log_line_sender.clone(),
-        "syslog_in",
-        ForwardMetrics {
-            in_queue_size: &SYSLOG_QUEUE_COUNT,
-            in_processed_count: &SYSLOG_PROCESSED_COUNT,
-            in_error_count: &SYSLOG_ERROR_COUNT,
-            out_queue_size: &SHIPPER_QUEUE_COUNT,
-        },
-    ));
-    drop(grpc_log_line_sender);
+    let shipper_server = ShipperServer::start_shipper_server(ServerConfig {
+        grpc_collector_endpoint: endpoint,
+        syslog_udp_bind_address: opts.syslog_udp_bind_address,
+        gelf_tcp_bind_address: opts.gelf_tcp_bind_address,
+    })
+    .await?;
 
     let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
     select! {
@@ -150,9 +104,8 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     tracing::info!("Request to shutdown received, initiating graceful shutdown.");
-    shutdown_token.cancel();
+    shipper_server.shutdown().await;
 
-    let _ = join!(syslog_in, gelf_in, grpc_out);
     tracing::info!("All tasks successfully exited!");
     Ok(())
 }

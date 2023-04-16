@@ -1539,6 +1539,7 @@ name = "rlog-collector"
 version = "0.2.17"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "axum",
  "clap",
  "dotenv",
@@ -1551,6 +1552,7 @@ dependencies = [
  "rlog-grpc",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tokio",
  "tokio-util",
  "tracing",

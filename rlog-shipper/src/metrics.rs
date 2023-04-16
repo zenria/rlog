@@ -7,15 +7,15 @@ use lazy_static::lazy_static;
 use rlog_grpc::rlog_service_protocol::Metrics;
 
 lazy_static! {
-    pub(crate) static ref GELF_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref SYSLOG_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref SHIPPER_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref GELF_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref SYSLOG_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref SHIPPER_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref SHIPPER_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref GELF_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
-    pub(crate) static ref SYSLOG_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref GELF_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref SYSLOG_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref SHIPPER_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref GELF_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref SYSLOG_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref SHIPPER_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref SHIPPER_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref GELF_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref SYSLOG_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
 }
 
 pub(crate) fn to_grpc_metrics() -> Metrics {
