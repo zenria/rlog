@@ -2,12 +2,12 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
-use rlog_common::utils::{init_logging, read_file};
-use rlog_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
-use rlog_shipper::{
-    config::{setup_config_from_file, CONFIG},
-    ServerConfig, ShipperServer,
+use rlog_common::{
+    config::setup_config_from_file,
+    utils::{init_logging, read_file},
 };
+use rlog_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
+use rlog_shipper::{config::CONFIG, ServerConfig, ShipperServer};
 use tokio::{select, signal::unix::SignalKind};
 
 /// Collects logs locally and ship them to a remote destination
@@ -55,11 +55,12 @@ async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
 
     if let Some(path) = opts.config.as_ref() {
-        setup_config_from_file(path)?;
+        setup_config_from_file(path, &CONFIG)?;
     }
 
     tracing::info!(
-        "Starting rlog-shipper with config:\n{}",
+        "Starting rlog-shipper {} with config:\n{}",
+        rlog_shipper::VERSION,
         serde_yaml::to_string(CONFIG.load().as_ref())?
     );
 

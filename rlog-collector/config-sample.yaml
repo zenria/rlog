@@ -1,0 +1,4 @@
+collector_input_buffer_size: 100
+collector_quickwit_output_buffer_size: 10
+collector_quickwit_batch_size: 10
+collector_quickwit_batch_max_interval: 10s

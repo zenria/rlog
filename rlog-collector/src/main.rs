@@ -2,8 +2,11 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
-use rlog_collector::{CollectorServer, CollectorServerConfig};
-use rlog_common::utils::{init_logging, read_file};
+use rlog_collector::{config::CONFIG, CollectorServer, CollectorServerConfig};
+use rlog_common::{
+    config::setup_config_from_file,
+    utils::{init_logging, read_file},
+};
 use rlog_grpc::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::{select, signal::unix::SignalKind};
 
@@ -34,6 +37,10 @@ struct Opts {
     /// HTTP status server (/health, /metrics)
     #[arg(long, env, default_value = "0.0.0.0:21040")]
     http_status_bind_address: String,
+
+    /// Configuration file, if not provided, a minimal default configuration will be used
+    #[arg(long, short, env)]
+    config: Option<String>,
 }
 
 #[tokio::main]
@@ -44,6 +51,16 @@ async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
 
     init_logging();
+
+    if let Some(path) = opts.config.as_ref() {
+        setup_config_from_file(path, &CONFIG)?;
+    }
+
+    tracing::info!(
+        "Starting rlog-collector {} with config:\n{}",
+        rlog_collector::VERSION,
+        serde_yaml::to_string(CONFIG.load().as_ref())?
+    );
 
     launch_async_process_collector(Duration::from_millis(500));
 

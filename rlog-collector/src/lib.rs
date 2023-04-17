@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::Context;
 use rlog_grpc::{
     rlog_service_protocol::log_collector_server::LogCollectorServer, tonic::transport::Server,
@@ -7,12 +5,16 @@ use rlog_grpc::{
 use tokio::{join, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+use crate::config::{Config, CONFIG};
+
 mod batch;
-mod config;
+pub mod config;
 mod grpc_server;
 mod http_status_server;
 mod index;
 pub mod metrics;
+
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub struct CollectorServer {
     shutdown_token: CancellationToken,
@@ -37,8 +39,10 @@ impl CollectorServer {
         let shutdown_token = CancellationToken::new();
 
         let (log_sender, batch_log_receiver) = batch::launch_batch_collector(
-            Duration::from_secs(1),
-            100,
+            CONFIG.map(|c: &Config| &c.collector_quickwit_batch_max_interval),
+            CONFIG.map(|c: &Config| &c.collector_quickwit_batch_size),
+            CONFIG.map(|c: &Config| &c.collector_input_buffer_size),
+            CONFIG.map(|c: &Config| &c.collector_quickwit_output_buffer_size),
             shutdown_token.child_token(),
         );
 

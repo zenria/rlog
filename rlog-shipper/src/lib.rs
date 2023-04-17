@@ -17,6 +17,8 @@ mod grpc_out;
 mod metrics;
 mod syslog_server;
 
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 pub struct ServerConfig {
     pub grpc_collector_endpoint: Endpoint,
     pub syslog_udp_bind_address: String,
