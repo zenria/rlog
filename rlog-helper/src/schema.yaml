@@ -5,16 +5,14 @@ index_id: rlog
 doc_mapping:
   mode: dynamic
   field_mappings:
-    - name: timestamp_secs
+    - name: timestamp
       type: datetime
       input_formats: [unix_timestamp]
       indexed: false
       fast: true
+      # truncate the fast field to seconds precision
       precision: seconds
       stored: true
-    - name: timestamp_nanos
-      type: u64
-      indexed: false
     - name: hostname
       type: text
       tokenizer: raw
@@ -33,7 +31,7 @@ doc_mapping:
       tokenizer: default
       record: position
 
-  timestamp_field: timestamp_secs
+  timestamp_field: timestamp
 
 indexing_settings:
   commit_timeout_secs: 5

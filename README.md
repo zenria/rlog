@@ -8,6 +8,12 @@ rlog collects logs locally and ship them to a remote logging destination. Collec
 - send logs to a remote log collector (mTLS gRPC)
 - write logs to quickwit
 
+TODO:
+
+- config on collector
+- resizeable buffers
+- integration tests
+
 ## Open Telemetry?
 
 Why not using Open Telemetry ecosystem and stop trying to do hacky stuff instead?

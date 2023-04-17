@@ -24,8 +24,13 @@ enum LogSystem {
 #[derive(Serialize, Debug)]
 pub struct IndexLogEntry {
     message: String,
-    timestamp_secs: u64,
-    timestamp_nanos: u64,
+    /// timestamp: number of
+    /// - seconds from EPOCH
+    /// - milliseconds from EPOCh
+    /// - microseconds from EPOCH
+    /// - nanosecondes from EPOCH
+    /// Quickwit will detect the right format...
+    timestamp: u64,
     hostname: String,
     service_name: String,
     severity_text: String,
@@ -169,11 +174,10 @@ impl TryFrom<LogLine> for IndexLogEntry {
                     .unwrap_or_else(|| "unknown".to_string());
                 let severity_text = severity.to_string();
                 let severity_number = severity as u8;
+                let timestamp_ms = timestamp.seconds * 1000 + (timestamp.nanos as i64) / 1_000_000;
                 Ok(IndexLogEntry {
                     message,
-                    timestamp_secs: timestamp.seconds as u64,
-                    timestamp_nanos: (timestamp.seconds * 1_000_000 + timestamp.nanos as i64)
-                        as u64,
+                    timestamp: timestamp_ms as u64,
                     hostname,
                     service_name,
                     severity_text,
@@ -200,12 +204,11 @@ impl TryFrom<LogLine> for IndexLogEntry {
                 }
                 let message = syslog.msg;
                 let service_name = syslog.appname.unwrap_or_else(|| "_syslog".into());
+                let timestamp_ms = timestamp.seconds * 1000 + (timestamp.nanos as i64) / 1_000_000;
 
                 Ok(IndexLogEntry {
                     message,
-                    timestamp_secs: timestamp.seconds as u64,
-                    timestamp_nanos: (timestamp.seconds * 1_000_000 + timestamp.nanos as i64)
-                        as u64,
+                    timestamp: timestamp_ms as u64,
                     hostname,
                     service_name,
                     severity_text,
