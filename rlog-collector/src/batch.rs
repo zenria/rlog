@@ -6,6 +6,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 
 // working with arc-swapped config is rather extreme in term of generic stuff
+// maybe this is a bit over-engineered!
 pub fn launch_batch_collector<T, D, S, IS, OS>(
     max_wait_time: D,
     max_batch_size: S,

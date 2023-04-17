@@ -6,6 +6,7 @@ members = [
     "rlog-shipper",
     "rlog-helper",
     "rlog-collector",
+    "integration",
 ]
 
 [profile.release]

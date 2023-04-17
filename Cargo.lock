@@ -883,6 +883,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "integration"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "portpicker",
+ "rlog-collector",
+ "rlog-common",
+ "rlog-grpc",
+ "rlog-shipper",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "inventory"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1223,6 +1238,15 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "portpicker"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
+dependencies = [
+ "rand",
+]
 
 [[package]]
 name = "ppv-lite86"

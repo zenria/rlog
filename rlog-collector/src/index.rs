@@ -13,7 +13,7 @@ use crate::metrics::{
     OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
 };
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "lowercase")]
 enum LogSystem {
     Syslog,
@@ -21,7 +21,7 @@ enum LogSystem {
 }
 
 /// What is being indexed by quickwit
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IndexLogEntry {
     message: String,
     /// timestamp: number of

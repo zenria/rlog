@@ -1,5 +1,6 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
+use rlog_common::utils::format_error;
 use rlog_grpc::{
     rlog_service_protocol::{log_collector_client::LogCollectorClient, LogLine},
     tonic::{
@@ -97,7 +98,7 @@ pub fn launch_grpc_shipper(
             select! {
                 _ = metrics_report_interval.next() => {
                     if let Err(e) = client.report_metrics(Request::new(to_grpc_metrics())).await{
-                        tracing::error!("Unable to report metrics: {e}");
+                        tracing::error!("Unable to report metrics: {}", format_error(e.into()));
                     }
                 }
                 log_line = receiver.recv() => {
@@ -125,7 +126,10 @@ async fn connect(
                 return Some(client);
             }
             Err(e) => {
-                tracing::error!("Unable to connect to collector gRPC endpoint: {e}");
+                tracing::error!(
+                    "Unable to connect to collector gRPC endpoint: {}",
+                    format_error(e.into())
+                );
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 if shutdown_token.is_cancelled() {
                     // shutdown initiated, stop connection process

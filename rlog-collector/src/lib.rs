@@ -14,6 +14,8 @@ mod http_status_server;
 mod index;
 pub mod metrics;
 
+pub use crate::index::IndexLogEntry;
+
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub struct CollectorServer {
