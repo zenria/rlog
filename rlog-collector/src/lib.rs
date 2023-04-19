@@ -15,6 +15,7 @@ mod index;
 pub mod metrics;
 
 pub use crate::index::IndexLogEntry;
+pub use crate::index::LogSystem;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 

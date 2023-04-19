@@ -13,9 +13,9 @@ use crate::metrics::{
     OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-enum LogSystem {
+pub enum LogSystem {
     Syslog,
     Gelf,
 }
@@ -23,24 +23,24 @@ enum LogSystem {
 /// What is being indexed by quickwit
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IndexLogEntry {
-    message: String,
+    pub message: String,
     /// timestamp: number of
     /// - seconds from EPOCH
     /// - milliseconds from EPOCh
     /// - microseconds from EPOCH
     /// - nanosecondes from EPOCH
     /// Quickwit will detect the right format...
-    timestamp: u64,
-    hostname: String,
-    service_name: String,
-    severity_text: String,
+    pub timestamp: u64,
+    pub hostname: String,
+    pub service_name: String,
+    pub severity_text: String,
     /// open telemetry severity
-    severity_number: u64,
+    pub severity_number: u64,
 
-    log_system: LogSystem,
+    pub log_system: LogSystem,
 
     #[serde(flatten)]
-    free_fields: HashMap<String, serde_json::Value>,
+    pub free_fields: HashMap<String, serde_json::Value>,
 }
 
 pub fn launch_index_loop(

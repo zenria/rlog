@@ -58,7 +58,6 @@ pub async fn launch_gelf_server(
                     let shutdown_token = shutdown_token.child_token();
                     let sender = sender.clone();
                     let remote_addr = format!("{r}");
-                    println!("Connected from {r}");
                     tokio::spawn(
                         async move {
                             tracing::info!("new connection");

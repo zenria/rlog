@@ -28,7 +28,7 @@ impl MockQuickwitServer {
                 &ingest_route,
                 post(
                     |received: State<Arc<RwLock<Vec<IndexLogEntry>>>>, body: String| async move {
-                        tracing::debug!("Received: {body}");
+                        tracing::info!("Received: {body}");
 
                         let mut received = received.write().await;
 
@@ -63,6 +63,6 @@ impl MockQuickwitServer {
     }
 
     pub fn url(&self) -> String {
-        format!("https://localhost:{}/", self.port)
+        format!("http://localhost:{}/", self.port)
     }
 }

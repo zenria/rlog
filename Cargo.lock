@@ -508,6 +508,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "error-chain"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d2f06b9cac1506ece98fe3231e3cc9c4410ec3d5b1f24ae1c8946f0742cdefc"
+dependencies = [
+ "version_check",
+]
+
+[[package]]
 name = "fastrand"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -886,13 +895,18 @@ dependencies = [
 name = "integration"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
+ "chrono",
+ "futures",
  "portpicker",
  "rlog-collector",
  "rlog-common",
  "rlog-grpc",
  "rlog-shipper",
+ "serde",
  "serde_json",
+ "syslog",
  "tokio",
  "tracing",
 ]
@@ -1135,6 +1149,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fac9e2da13b5eb447a6ce3d392f23a29d8694bff781bf03a16cd9ac8697593b"
 dependencies = [
  "hermit-abi 0.2.6",
+ "libc",
+]
+
+[[package]]
+name = "num_threads"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2819ce041d2ee131036f4fc9d6ae7ae125a3a40e97ba64d04fe799ad9dabbb44"
+dependencies = [
  "libc",
 ]
 
@@ -1945,6 +1968,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "syslog"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978044cc68150ad5e40083c9f6a725e6fd02d7ba1bcf691ec2ff0d66c0b41acc"
+dependencies = [
+ "error-chain",
+ "hostname",
+ "libc",
+ "log",
+ "time 0.3.20",
+]
+
+[[package]]
 name = "syslog_loose"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2024,6 +2060,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd0cbfecb4d19b5ea75bb31ad904eb5b9fa13f21079c3b92017ebdf4999a5890"
 dependencies = [
  "itoa",
+ "libc",
+ "num_threads",
  "serde",
  "time-core",
  "time-macros",
@@ -2381,6 +2419,12 @@ name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+
+[[package]]
+name = "version_check"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "want"
