@@ -8,17 +8,16 @@ use axum::{
 use rlog_collector::IndexLogEntry;
 use tokio::sync::RwLock;
 
+use crate::test_utils::BindAddresses;
+
 /// Mock quickwit server
 
 pub struct MockQuickwitServer {
     received: Arc<RwLock<Vec<IndexLogEntry>>>,
-    port: u16,
 }
 
 impl MockQuickwitServer {
-    pub fn start(index_id: &str) -> Self {
-        let port = portpicker::pick_unused_port().expect("Unable to find a free port");
-
+    pub fn start(index_id: &str, bind_addresses: &BindAddresses) -> Self {
         let received = Arc::new(RwLock::new(vec![]));
 
         let ingest_route = format!("/api/v1/{index_id}/ingest");
@@ -46,7 +45,8 @@ impl MockQuickwitServer {
                 ),
             )
             .with_state(received.clone());
-        let sock_addr = format!("127.0.0.1:{port}")
+        let sock_addr = bind_addresses
+            .quickwit_bind_address
             .parse::<SocketAddr>()
             .expect("Invalid http status server bind address");
         tokio::spawn(async move {
@@ -55,14 +55,14 @@ impl MockQuickwitServer {
                 .await
                 .unwrap();
         });
-        Self { received, port }
+        Self { received }
     }
 
     pub async fn get_received(&self) -> Vec<IndexLogEntry> {
         self.received.read().await.iter().cloned().collect()
     }
 
-    pub fn url(&self) -> String {
-        format!("http://localhost:{}/", self.port)
+    pub fn url(bind_addresses: &BindAddresses) -> String {
+        format!("http://{}/", bind_addresses.quickwit_bind_address)
     }
 }

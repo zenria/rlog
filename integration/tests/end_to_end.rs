@@ -1,61 +1,21 @@
 #[cfg(test)]
 #[tokio::test]
 async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
-    use axum::http::Uri;
-    use integration::{
-        quickwit_mock::MockQuickwitServer,
-        test_utils::{self, GelfLog, GelfLogger},
-    };
-    use rlog_collector::{CollectorServerConfig, LogSystem};
+    use integration::test_utils::{self, BindAddresses, GelfLog};
+    use rlog_collector::LogSystem;
     use rlog_common::utils::init_logging;
-    use rlog_grpc::tonic::transport::{Channel, Server};
-    use rlog_shipper::ServerConfig;
     use serde_json::json;
-    use std::{
-        str::FromStr,
-        time::{Duration, SystemTime, UNIX_EPOCH},
-    };
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use syslog::Severity;
     use tokio::time::timeout;
 
     init_logging();
 
-    let grpc_bind_address = format!(
-        "127.0.0.1:{}",
-        portpicker::pick_unused_port().expect("Cannot find an unused port")
-    );
-    let shipper_gelf_bind = format!(
-        "127.0.0.1:{}",
-        portpicker::pick_unused_port().expect("Cannot find an unused port")
-    );
-    let shipper_syslog_bind = format!(
-        "127.0.0.1:{}",
-        portpicker::pick_unused_port().expect("Cannot find an unused port")
-    );
-    let collector_http_bind = format!(
-        "127.0.0.1:{}",
-        portpicker::pick_unused_port().expect("Cannot find an unused port")
-    );
+    let bind_addresses = BindAddresses::default();
 
-    let quickwit_server = MockQuickwitServer::start("rlog");
-
-    let collector =
-        rlog_collector::CollectorServer::start_collector_server(CollectorServerConfig {
-            http_status_bind_address: collector_http_bind,
-            grpc_bind_address: grpc_bind_address.clone(),
-            quickwit_rest_url: quickwit_server.url(),
-            quickwit_index_id: "rlog".to_string(),
-            server: Server::builder(),
-        })?;
-
-    let shipper = rlog_shipper::ShipperServer::start_shipper_server(ServerConfig {
-        grpc_collector_endpoint: Channel::builder(Uri::from_str(&format!(
-            "http://{grpc_bind_address}"
-        ))?),
-        syslog_udp_bind_address: shipper_syslog_bind.clone(),
-        gelf_tcp_bind_address: shipper_gelf_bind.clone(),
-    })
-    .await?;
+    let quickwit_server = bind_addresses.start_quickwit("rlog");
+    let collector = bind_addresses.start_collector("rlog")?;
+    let shipper = bind_addresses.start_shipper().await?;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -67,7 +27,7 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
         1234,
         syslog::Facility::LOG_LOCAL0,
         syslog::Severity::LOG_INFO,
-        &shipper_syslog_bind,
+        &bind_addresses,
     );
     test_utils::send_syslog(
         "hello world2",
@@ -76,11 +36,11 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
         12345,
         syslog::Facility::LOG_MAIL,
         syslog::Severity::LOG_ERR,
-        &shipper_syslog_bind,
+        &bind_addresses,
     );
 
     // also send some gelf stuff
-    let mut gelf_logger = GelfLogger::new(&shipper_gelf_bind).await?;
+    let mut gelf_logger = bind_addresses.gelf_logger().await?;
     gelf_logger
         .send_log(&GelfLog {
             short_message: "hello gelf short message",
@@ -114,21 +74,41 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
+    // also send a log with another gelf logger (this checks that our server accepts more than 1 connection)
+    bind_addresses
+        .gelf_logger()
+        .await?
+        .send_log(&GelfLog {
+            short_message: "foobar :)",
+            long_message: None,
+            level: Severity::LOG_INFO as usize,
+            service: "my_java_new_stuff",
+            host: "my_gelf_host",
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64(),
+            extra_fields: json!({}),
+        })
+        .await?;
+
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // batch shall be sent now...
     let received = quickwit_server.get_received().await;
 
-    assert_eq!(received.len(), 4, "We should have received 4 logs by now!");
+    assert_eq!(received.len(), 5, "We should have received 4 logs by now!");
     assert_eq!("hello world", received[0].message);
     assert_eq!("hello world2", received[1].message);
     assert_eq!("hello gelf short message", received[2].message);
     assert_eq!("hello gelf short message 2", received[3].message);
+    assert_eq!("foobar :)", received[4].message);
 
     assert_eq!("my_app", received[0].service_name);
     assert_eq!("my_app2", received[1].service_name);
     assert_eq!("my_java_old_stuff", received[2].service_name);
     assert_eq!("my_java_old_stuff", received[3].service_name);
+    assert_eq!("my_java_new_stuff", received[4].service_name);
 
     assert_eq!("my_host", received[0].hostname);
     assert_eq!("my_host", received[1].hostname);
