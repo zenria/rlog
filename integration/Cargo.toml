@@ -6,19 +6,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-axum="0.6"
-serde_json="1"
-serde={version="1", features=["derive"]}
-rlog-collector={path="../rlog-collector"}
-rlog-grpc={path="../rlog-grpc"}
-rlog-shipper={path="../rlog-shipper"}
-rlog-common={path="../rlog-common"}
-tokio={version="1", features=["rt-multi-thread", "time", "sync"]}
-portpicker="0.1"
-tracing="0.1"
-chrono="0.4"
-syslog = "^6.0"
-futures="0.3"
-anyhow="1"
-rand="0.8"
-[dev-dependencies]
+serde_json = {workspace = true}
+serde = {workspace = true}
+rlog-collector = {workspace = true}
+rlog-grpc = {workspace = true}
+rlog-shipper = {workspace = true}
+rlog-common = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+anyhow = {workspace = true}
+futures = {workspace = true}
+axum = {workspace = true}
+portpicker= {workspace = true}
+chrono= {workspace = true}
+syslog= {workspace = true}
+rand= {workspace = true}
