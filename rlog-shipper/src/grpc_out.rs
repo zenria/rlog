@@ -46,7 +46,6 @@ pub fn launch_grpc_shipper(
         loop {
             // send current log_line if any
             if let Some(log_line) = current_log_line.take() {
-                SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
                 tracing::debug!("Will ship {log_line:#?}");
                 // do something
                 let request = Request::new(log_line.clone());
@@ -100,7 +99,10 @@ pub fn launch_grpc_shipper(
                 }
                 log_line = receiver.recv() => {
                     match log_line{
-                        Ok(log_line)=>  current_log_line = Some(log_line),
+                        Ok(log_line)=>  {
+                            current_log_line = Some(log_line);
+                            SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
+                        },
                         Err(_) => break,
                     }
                 }
