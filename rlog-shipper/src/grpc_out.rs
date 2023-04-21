@@ -1,5 +1,7 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
+use async_channel::Sender;
+use futures::FutureExt;
 use rlog_common::utils::format_error;
 use rlog_grpc::{
     rlog_service_protocol::{log_collector_client::LogCollectorClient, LogLine},
@@ -8,12 +10,7 @@ use rlog_grpc::{
         Code, Request, Response, Status,
     },
 };
-use tokio::{
-    select,
-    sync::mpsc::{channel, Sender},
-    task::JoinHandle,
-    time::interval,
-};
+use tokio::{select, task::JoinHandle, time::interval};
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
@@ -26,7 +23,7 @@ pub fn launch_grpc_shipper(
     endpoint: Endpoint,
     shutdown_token: CancellationToken,
 ) -> (Sender<LogLine>, JoinHandle<()>) {
-    let (sender, mut receiver) = channel(CONFIG.load().grpc_out.max_buffer_size);
+    let (sender, receiver) = async_channel::bounded(CONFIG.load().grpc_out.max_buffer_size);
 
     let handle = tokio::spawn(async move {
         let mut current_log_line: Option<LogLine> = None;
@@ -47,10 +44,6 @@ pub fn launch_grpc_shipper(
         let mut metrics_report_interval = IntervalStream::new(interval(Duration::from_secs(30)));
 
         loop {
-            if shutdown_token.is_cancelled() {
-                // early return to allow to exit if a log is being retried with a dead collector
-                return;
-            }
             // send current log_line if any
             if let Some(log_line) = current_log_line.take() {
                 SHIPPER_QUEUE_COUNT.fetch_sub(1, Ordering::Relaxed);
@@ -84,6 +77,10 @@ pub fn launch_grpc_shipper(
                                 "Unable to send LogLine, collector reported an error: {} - {status:?}",
                                 status.message()
                             );
+                            if shutdown_token.is_cancelled() {
+                                // early return to allow to exit if a log is being retried with a dead collector
+                                return;
+                            }
                             // collector unavailable means the upstream (quickwit) is not available
                             // wait a bit before trying to send again the log line
                             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -103,13 +100,13 @@ pub fn launch_grpc_shipper(
                 }
                 log_line = receiver.recv() => {
                     match log_line{
-                        Some(log_line)=>  current_log_line = Some(log_line),
-                        None => break,
+                        Ok(log_line)=>  current_log_line = Some(log_line),
+                        Err(_) => break,
                     }
                 }
             }
         }
-    });
+    }.then(|_|async{tracing::info!("grpc_out task exited processed:{}", SHIPPER_PROCESSED_COUNT.load(Ordering::Relaxed))}));
 
     (sender, handle)
 }

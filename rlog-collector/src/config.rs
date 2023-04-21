@@ -25,8 +25,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            collector_input_buffer_size: 1000,
-            collector_quickwit_output_buffer_size: 100,
+            collector_input_buffer_size: 10000,
+            collector_quickwit_output_buffer_size: 1000,
             collector_quickwit_batch_size: 100,
             collector_quickwit_batch_max_interval: Duration::from_secs(1),
         }

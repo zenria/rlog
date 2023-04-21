@@ -1,9 +1,9 @@
+use async_channel::Receiver;
+use async_channel::Sender;
 use rlog_common::utils::format_error;
 use rlog_grpc::rlog_service_protocol::LogLine;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::mpsc::Sender;
 
 pub struct ForwardMetrics {
     pub in_queue_size: &'static AtomicU64,
@@ -13,14 +13,14 @@ pub struct ForwardMetrics {
 }
 
 pub async fn forward_loop<T>(
-    mut input: Receiver<T>,
+    input: Receiver<T>,
     grpc_out: Sender<LogLine>,
     input_name: &str,
     fw_metrics: ForwardMetrics,
 ) where
     LogLine: TryFrom<T, Error = anyhow::Error>,
 {
-    while let Some(syslog) = input.recv().await {
+    while let Ok(syslog) = input.recv().await {
         fw_metrics.in_queue_size.fetch_sub(1, Ordering::Relaxed);
         fw_metrics
             .in_processed_count

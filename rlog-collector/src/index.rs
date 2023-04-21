@@ -1,11 +1,13 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, Context};
+use async_channel::Receiver;
+use futures::FutureExt;
 use itertools::Itertools;
 use reqwest::{Client, StatusCode, Url};
 use rlog_grpc::{rlog_service_protocol::LogLine, OTELSeverity};
 use serde::{Deserialize, Serialize};
-use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use crate::metrics::{
     COLLECTOR_INDEXED_COUNT, COLLECTOR_OUTPUT_COUNT, OUTPUT_STATUS_ERROR_LABEL_VALUE,
@@ -46,7 +48,7 @@ pub struct IndexLogEntry {
 pub fn launch_index_loop(
     quickwit_rest_url: &str,
     index_id: &str,
-    mut batch_receiver: Receiver<Vec<IndexLogEntry>>,
+    batch_receiver: Receiver<Vec<IndexLogEntry>>,
 ) -> anyhow::Result<JoinHandle<()>> {
     // parse url & setup http client
     let quickwit_rest_url: Url = quickwit_rest_url
@@ -57,91 +59,97 @@ pub fn launch_index_loop(
         .connect_timeout(Duration::from_secs(5))
         .build()?;
 
-    Ok(tokio::spawn(async move {
-        let mut batch_to_send: Option<String> = None;
-        let mut batch_count = 0;
-        loop {
-            if let Some(body) = batch_to_send.take() {
-                tracing::debug!("Sending to quickwit {batch_count} items:\n{body}");
-                // send the stuff
-                match http_client
-                    .post(ingest_url.clone())
-                    .body(body.clone())
-                    .send()
-                    .await
-                {
-                    Ok(quickwit_response) => {
-                        match quickwit_response.status() {
-                            StatusCode::OK => {
-                                // consume response
-                                let _response = quickwit_response.text().await;
-                                tracing::debug!("OK");
-                                COLLECTOR_INDEXED_COUNT.inc_by(batch_count);
-                                COLLECTOR_OUTPUT_COUNT
-                                    .with_label_values(&[
-                                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
-                                        OUTPUT_STATUS_OK_LABEL_VALUE,
-                                    ])
-                                    .inc();
-                                // nothing to do here, this has been successfully accepted by quickwit
-                            }
-                            StatusCode::TOO_MANY_REQUESTS => {
-                                // consume response
-                                let _response = quickwit_response.text().await;
-                                tracing::warn!(
-                                    "Quickwit overloaded (429), wait 5 seconds before retrying"
-                                );
-                                batch_to_send = Some(body);
-                                COLLECTOR_OUTPUT_COUNT
-                                    .with_label_values(&[
-                                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
-                                        OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE,
-                                    ])
-                                    .inc();
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-                                continue;
-                            }
-                            other => {
-                                let response = quickwit_response.text().await;
-                                tracing::error!("Unhandled status code {other} - {response:?}");
-                                // retry batch
-                                batch_to_send = Some(body);
-                                COLLECTOR_OUTPUT_COUNT
-                                    .with_label_values(&[
-                                        OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
-                                        OUTPUT_STATUS_ERROR_LABEL_VALUE,
-                                    ])
-                                    .inc();
-                                tokio::time::sleep(Duration::from_secs(1)).await;
-                                continue;
+    Ok(tokio::spawn(
+        async move {
+            let mut batch_to_send: Option<String> = None;
+            let mut batch_count = 0;
+            loop {
+                if let Some(body) = batch_to_send.take() {
+                    tracing::debug!("Sending to quickwit {batch_count} items:\n{body}");
+                    // send the stuff
+                    match http_client
+                        .post(ingest_url.clone())
+                        .body(body.clone())
+                        .send()
+                        .await
+                    {
+                        Ok(quickwit_response) => {
+                            match quickwit_response.status() {
+                                StatusCode::OK => {
+                                    // consume response
+                                    let _response = quickwit_response.text().await;
+                                    tracing::debug!("OK");
+                                    COLLECTOR_INDEXED_COUNT.inc_by(batch_count);
+                                    COLLECTOR_OUTPUT_COUNT
+                                        .with_label_values(&[
+                                            OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                            OUTPUT_STATUS_OK_LABEL_VALUE,
+                                        ])
+                                        .inc();
+                                    // nothing to do here, this has been successfully accepted by quickwit
+                                }
+                                StatusCode::TOO_MANY_REQUESTS => {
+                                    // consume response
+                                    let _response = quickwit_response.text().await;
+                                    tracing::warn!(
+                                        "Quickwit overloaded (429), wait 5 seconds before retrying"
+                                    );
+                                    batch_to_send = Some(body);
+                                    COLLECTOR_OUTPUT_COUNT
+                                        .with_label_values(&[
+                                            OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                            OUTPUT_STATUS_TOO_MANY_REQUEST_LABEL_VALUE,
+                                        ])
+                                        .inc();
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                    continue;
+                                }
+                                other => {
+                                    let response = quickwit_response.text().await;
+                                    tracing::error!("Unhandled status code {other} - {response:?}");
+                                    // retry batch
+                                    batch_to_send = Some(body);
+                                    COLLECTOR_OUTPUT_COUNT
+                                        .with_label_values(&[
+                                            OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                            OUTPUT_STATUS_ERROR_LABEL_VALUE,
+                                        ])
+                                        .inc();
+                                    tokio::time::sleep(Duration::from_secs(1)).await;
+                                    continue;
+                                }
                             }
                         }
+                        Err(quickwit_error) => {
+                            // connect error or some low level error, we must retry
+                            tracing::error!(
+                                "Error sending batch to quickwit, retry in 1s - {quickwit_error}"
+                            );
+                            batch_to_send = Some(body);
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
                     }
-                    Err(quickwit_error) => {
-                        // connect error or some low level error, we must retry
-                        tracing::error!(
-                            "Error sending batch to quickwit, retry in 1s - {quickwit_error}"
-                        );
+                }
+                match batch_receiver.recv().await {
+                    Ok(batch) => {
+                        batch_count = batch.len() as u64;
+                        let body = batch
+                            .into_iter()
+                            .map(|j| serde_json::to_string(&j).unwrap())
+                            .join("\n");
                         batch_to_send = Some(body);
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue;
+                    }
+                    // channel close (server shutdown)
+                    Err(_) => {
+                        tracing::info!("Input channel closed.");
+                        break;
                     }
                 }
-            }
-            match batch_receiver.recv().await {
-                Some(batch) => {
-                    batch_count = batch.len() as u64;
-                    let body = batch
-                        .into_iter()
-                        .map(|j| serde_json::to_string(&j).unwrap())
-                        .join("\n");
-                    batch_to_send = Some(body);
-                }
-                // channel close (server shutdown)
-                None => break,
             }
         }
-    }))
+        .then(|_| async { tracing::info!("Exited indexing task.") }),
+    ))
 }
 
 #[derive(Deserialize)]

@@ -73,11 +73,15 @@ pub struct GelfLog<'a> {
 }
 
 fn find_open_ports<const N: usize>() -> [u16; N] {
+    find_open_ports_excluding(&[])
+}
+
+fn find_open_ports_excluding<const N: usize>(excluding: &[u16]) -> [u16; N] {
     let mut ret = [0u16; N];
 
     for i in 0..N {
         let mut candidate = portpicker::pick_unused_port().expect("Unable to pick unused port");
-        while ret[..i].contains(&candidate) {
+        while ret[..i].contains(&candidate) || excluding.contains(&candidate) {
             candidate = portpicker::pick_unused_port().expect("Unable to pick unused port");
         }
         ret[i] = candidate;
@@ -92,7 +96,9 @@ pub struct BindAddresses {
     pub shipper_syslog_bind: String,
     pub collector_http_bind: String,
     pub quickwit_bind_address: String,
+    used_ports: Vec<u16>,
 }
+
 impl Default for BindAddresses {
     fn default() -> Self {
         let ports = find_open_ports::<5>();
@@ -102,6 +108,7 @@ impl Default for BindAddresses {
             shipper_syslog_bind: format!("127.0.0.1:{}", ports[2]),
             collector_http_bind: format!("127.0.0.1:{}", ports[3]),
             quickwit_bind_address: format!("127.0.0.1:{}", ports[4]),
+            used_ports: ports.to_vec(),
         }
     }
 }
@@ -137,5 +144,22 @@ impl BindAddresses {
     /// must be started before starting this.
     pub async fn gelf_logger(&self) -> anyhow::Result<GelfLogger> {
         GelfLogger::new(&self.shipper_gelf_bind).await
+    }
+
+    /// This must not be called on "child" BindAddressed
+    pub fn new_shipper_addresses(&mut self) -> Self {
+        if self.used_ports.len() == 0 {
+            panic!("This must only be used on the root struct");
+        }
+        let ports = find_open_ports_excluding::<2>(&self.used_ports);
+        self.used_ports.extend_from_slice(&ports);
+        Self {
+            grpc_bind_address: self.grpc_bind_address.clone(),
+            shipper_gelf_bind: format!("127.0.0.1:{}", ports[0]),
+            shipper_syslog_bind: format!("127.0.0.1:{}", ports[1]),
+            collector_http_bind: self.collector_http_bind.clone(),
+            quickwit_bind_address: self.quickwit_bind_address.clone(),
+            used_ports: vec![],
+        }
     }
 }

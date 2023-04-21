@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use arc_swap::access::Access;
+use async_channel::{Receiver, SendError, Sender};
 use tokio::select;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 
 // working with arc-swapped config is rather extreme in term of generic stuff
@@ -21,9 +21,9 @@ where
     IS: Access<usize> + Send + 'static,
     OS: Access<usize> + Send + 'static,
 {
-    let (sender, mut receiver) = channel(*input_buffer_size.load());
+    let (sender, receiver) = async_channel::bounded(*input_buffer_size.load());
 
-    let (batch_sender, batch_receiver) = channel(*output_buffer_size.load());
+    let (batch_sender, batch_receiver) = async_channel::bounded(*output_buffer_size.load());
 
     tokio::spawn(async move {
         let mut buffer = Vec::with_capacity(*max_batch_size.load());
@@ -36,29 +36,31 @@ where
                     // will answer "unavailable" to all incoming requests
                     receiver.close();
                     // drain the receiver and put it for the last batch
-                    while let Some(item) = receiver.recv().await {
+                    while let Ok(item) = receiver.recv().await {
                         buffer.push(item);
                     }
                     // send buffer & exit
-                    send_buffer(&mut buffer, &batch_sender).await;
+                    if let Err(_) = send_buffer(&mut buffer, &batch_sender).await{
+                        tracing::error!("Batch channel closed!");
+                    }
                     return;
                 }
                 _ = max_wait => {
                     // waited too long, send the buffer
-                    send_buffer(&mut buffer, &batch_sender).await;
-                }
-                log_line =  receiver.recv() => {
-                    match log_line {
-                        Some(log_line) => {
-                            buffer.push(log_line);
-                            if buffer.len() == *max_batch_size.load(){
-                                // batch completed!
-                                send_buffer(&mut buffer, &batch_sender).await;
-                            }
-                        },
-                        None => todo!(),
+                    if let Err(_) =  send_buffer(&mut buffer, &batch_sender).await{
+                        tracing::error!("Batch channel closed!");
                     }
-
+                }
+                // we are responsible for channel closing ; by construction,
+                // we must ignore recv() errors
+                Ok(log_line) =  receiver.recv() => {
+                    buffer.push(log_line);
+                    if buffer.len() == *max_batch_size.load(){
+                        // batch completed!
+                        if let Err(_) =  send_buffer(&mut buffer, &batch_sender).await{
+                            tracing::error!("Batch channel closed!");
+                        }
+                    }
                 }
             }
         }
@@ -67,11 +69,15 @@ where
     (sender, batch_receiver)
 }
 
-async fn send_buffer<T>(buffer: &mut Vec<T>, batch_sender: &Sender<Vec<T>>) {
-    if buffer.len() == 0 {
-        return;
+async fn send_buffer<T>(
+    buffer: &mut Vec<T>,
+    batch_sender: &Sender<Vec<T>>,
+) -> Result<(), SendError<Vec<T>>> {
+    if buffer.len() > 0 {
+        let batch = buffer.drain(..).collect::<Vec<_>>();
+        // ignore send errors
+        batch_sender.send(batch).await
+    } else {
+        Ok(())
     }
-    let batch = buffer.drain(..).collect::<Vec<_>>();
-    // ignore send errors
-    let _ = batch_sender.send(batch).await;
 }

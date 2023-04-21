@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::atomic::Ordering};
 
 use anyhow::Context;
 use arc_swap::access::Access;
+use async_channel::{Receiver, TrySendError};
 use bytes::BytesMut;
 use futures::FutureExt;
 use rlog_grpc::rlog_service_protocol::{GelfLogLine, LogLine};
@@ -10,14 +11,13 @@ use tokio::{
     io::AsyncReadExt,
     net::TcpListener,
     select,
-    sync::mpsc::{channel, error::TrySendError, Receiver},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
     config::{Config, CONFIG},
-    metrics::{GELF_ERROR_COUNT, GELF_QUEUE_COUNT},
+    metrics::{self, GELF_ERROR_COUNT, GELF_QUEUE_COUNT},
 };
 
 pub struct GelfLog(serde_json::Value);
@@ -33,7 +33,7 @@ pub async fn launch_gelf_server(
     shutdown_token: CancellationToken,
 ) -> anyhow::Result<Receiver<GelfLog>> {
     let config = CONFIG.map(|config: &Config| &config.gelf_in);
-    let (sender, receiver) = channel(config.load().common.max_buffer_size);
+    let (sender, receiver) = async_channel::bounded(config.load().common.max_buffer_size);
 
     let listener = TcpListener::bind(bind_address)
         .await
@@ -62,11 +62,15 @@ pub async fn launch_gelf_server(
                         async move {
                             tracing::info!("new connection");
                             let mut buffer = BytesMut::with_capacity(4096);
-                            // In a loop, read data from the socket and write the data back.
                             loop {
                                 select!{
                                     _ = shutdown_token.cancelled() => {
-                                        return;
+                                        if buffer.len()>0 {
+                                            // wait for more bytes to come before shutting down
+                                            tracing::debug!("Buffer not empty!");
+                                        } else {
+                                            return;
+                                        }
                                     }
                                     res = socket.read_buf(&mut buffer) => {
                                         let _n = match res {
@@ -90,8 +94,11 @@ pub async fn launch_gelf_server(
                                             .find(|(_i, byte)| byte == &&0)
                                             .map(|(i, _)| i)
                                         {
-                                            // there is a message between cursor & i
-                                            match serde_json::from_slice::<Value>(&buffer[0..i]) {
+                                            
+                                            let frame = buffer.split_to(i + 1);
+                                            // there is a message between 0..i (the last byte is 0x0 we must not feed the json
+                                            // parser with this)
+                                            match serde_json::from_slice::<Value>(&frame[0..i]) {
                                                 Ok(valid_json) => {
                                                     tracing::debug!("Received: {valid_json}");
 
@@ -121,8 +128,7 @@ pub async fn launch_gelf_server(
                                                     tracing::error!("Unable to decode json: {e}")
                                                 }
                                             }
-                                            // remove the first part of the buffer and discard it
-                                            let _ = buffer.split_to(i + 1);
+                                            
                                         }
                                     }
                                 }
@@ -137,7 +143,10 @@ pub async fn launch_gelf_server(
         }
     }
     .then(|_| async {
-        tracing::info!("GELF server stopped.")
+        tracing::info!("GELF server stopped, processed: {}, errors: {}, in_queue: {}", 
+            metrics::GELF_PROCESSED_COUNT.load(Ordering::Relaxed), 
+            metrics::GELF_ERROR_COUNT.load(Ordering::Relaxed),
+            metrics::GELF_QUEUE_COUNT.load(Ordering::Relaxed))
     }));
 
     Ok(receiver)

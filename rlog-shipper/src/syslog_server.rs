@@ -2,16 +2,13 @@ use std::{fmt::Display, sync::atomic::Ordering};
 
 use anyhow::{anyhow, Context};
 use arc_swap::access::Access;
+use async_channel::{Receiver, TrySendError};
 use futures::FutureExt;
 use rlog_grpc::rlog_service_protocol::{
     log_line::Line, LogLine, SyslogFacility, SyslogLogLine, SyslogSeverity,
 };
 use syslog_loose::Message;
-use tokio::{
-    net::UdpSocket,
-    select,
-    sync::mpsc::{channel, error::TrySendError, Receiver},
-};
+use tokio::{net::UdpSocket, select};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -32,7 +29,7 @@ pub async fn launch_syslog_udp_server(
     shutdown_token: CancellationToken,
 ) -> anyhow::Result<Receiver<SyslogLog>> {
     let config = CONFIG.map(|config: &Config| &config.syslog_in);
-    let (sender, receiver) = channel(config.load().common.max_buffer_size);
+    let (sender, receiver) = async_channel::bounded(config.load().common.max_buffer_size);
 
     let socket = UdpSocket::bind(&bind_address)
         .await

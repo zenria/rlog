@@ -1,9 +1,9 @@
+use async_channel::Sender;
 use rlog_common::utils::format_error;
 use rlog_grpc::{
     rlog_service_protocol::{LogLine, Metrics},
     tonic::{self, async_trait, Status},
 };
-use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 
 use crate::{
