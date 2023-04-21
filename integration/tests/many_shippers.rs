@@ -52,7 +52,7 @@ async fn many_shippers() -> anyhow::Result<()> {
             }
             drop(logger);
             // let a bit time for logs to be shipped to the collector
-            //tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
 
             timeout(Duration::from_secs(120), shipper.shutdown()).await?;
 
