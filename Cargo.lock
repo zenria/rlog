@@ -928,7 +928,7 @@ dependencies = [
 
 [[package]]
 name = "integration"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1629,7 +1629,7 @@ dependencies = [
 
 [[package]]
 name = "rlog-collector"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1655,7 +1655,7 @@ dependencies = [
 
 [[package]]
 name = "rlog-common"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1671,7 +1671,7 @@ dependencies = [
 
 [[package]]
 name = "rlog-grpc"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-stream",
  "bytes",
@@ -1685,7 +1685,7 @@ dependencies = [
 
 [[package]]
 name = "rlog-helper"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1696,7 +1696,7 @@ dependencies = [
 
 [[package]]
 name = "rlog-shipper"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arc-swap",
