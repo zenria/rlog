@@ -22,6 +22,7 @@ message LogLine {
     oneof line {
         GelfLogLine gelf = 4;
         SyslogLogLine syslog = 5;
+        //MinimalLogLine minimal = 7;
     }
 }
 
@@ -59,6 +60,14 @@ message SyslogLogLine {
     
     // message
     string msg=10;
+}
+
+message MinimalLogLine {
+    string message = 1;
+    SyslogSeverity severity = 2;
+    // extra fields, as a json object - can be an empty object `{}`
+    string extra = 3;
+
 }
 
 enum SyslogFacility {

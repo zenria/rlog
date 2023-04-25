@@ -21,3 +21,5 @@ portpicker= {workspace = true}
 chrono= {workspace = true}
 syslog= {workspace = true}
 rand= {workspace = true}
+tempfile = {workspace = true}
+regex = {workspace = true}

@@ -1,15 +1,72 @@
+use std::io::Write;
+
 #[cfg(test)]
 #[tokio::test]
 async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
     use integration::test_utils::{self, BindAddresses, GelfLog};
+    use regex::Regex;
     use rlog_collector::LogSystem;
     use rlog_common::utils::init_logging;
+    use rlog_shipper::config::{FieldMapping, FieldType, FileParseConfig};
     use serde_json::json;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::{
+        collections::HashMap,
+        sync::Arc,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
     use syslog::Severity;
+    use tempfile::NamedTempFile;
     use tokio::time::timeout;
 
     init_logging();
+
+    // setup file watching config
+    let mut tmp_file = NamedTempFile::new()?;
+
+    let mut files_in = HashMap::new();
+    files_in.insert(
+        tmp_file.path().to_string_lossy().to_string(),
+        FileParseConfig::Regex {
+            pattern: Regex::new(r#"^\[([^\]]+)\]\[([^\]]+) *\]\[([^\]]+)\] \[([^\]]+)\] (.*)$"#)
+                .unwrap(),
+
+            mapping: vec![
+                FieldMapping {
+                    name: "timestamp".into(),
+                    field_type: FieldType::Timestamp,
+                },
+                FieldMapping {
+                    name: "level".into(),
+                    field_type: FieldType::SyslogLevelText,
+                },
+                FieldMapping {
+                    name: "_logger".into(),
+                    field_type: FieldType::String,
+                },
+                FieldMapping {
+                    name: "host".into(),
+                    field_type: FieldType::String,
+                },
+                FieldMapping {
+                    name: "short_message".into(),
+                    field_type: FieldType::String,
+                },
+            ],
+        },
+    );
+
+    rlog_shipper::config::CONFIG.store(Arc::new(rlog_shipper::config::Config {
+        files_in,
+        ..Default::default()
+    }));
+    tmp_file.write_all(
+        format!("[2023-02-13T08:42:54,879][INFO ][o.e.n.Node               ] [sug6-dev-1] stopped")
+            .as_bytes(),
+    )?;
+    tmp_file.write_all(
+        format!("[2023-02-13T08:46:48,927][INFO ][o.e.e.NodeEnvironment    ] [sug6-dev-1] using [1] data paths, mounts [[/ (/dev/md1p1)]], net usable_space [669.4gb], net total_space [936gb], types [ext4]")
+            .as_bytes(),
+    )?;
 
     let bind_addresses = BindAddresses::default();
 
@@ -38,6 +95,8 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
         syslog::Severity::LOG_ERR,
         &bind_addresses,
     );
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // also send some gelf stuff
     let mut gelf_logger = bind_addresses.gelf_logger().await?;
@@ -92,12 +151,17 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // write to the file ; 1 log only
+    tmp_file.write_all(format!("[2023-02-13T08:46:53,195][INFO ][o.e.p.PluginsService     ] [sug6-dev-1] loaded module [analysis-common]").as_bytes())?;
+
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // batch shall be sent now...
     let received = quickwit_server.get_received().await;
 
-    assert_eq!(received.len(), 5, "We should have received 4 logs by now!");
+    assert_eq!(received.len(), 6, "We should have received 6 logs by now!");
     assert_eq!("hello world", received[0].message);
     assert_eq!("hello world2", received[1].message);
     assert_eq!("hello gelf short message", received[2].message);

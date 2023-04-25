@@ -7,15 +7,18 @@ use lazy_static::lazy_static;
 use rlog_grpc::rlog_service_protocol::Metrics;
 
 lazy_static! {
+    pub static ref FILES_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref GELF_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref SYSLOG_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref SHIPPER_QUEUE_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref GELF_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref FILES_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref SYSLOG_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref SHIPPER_PROCESSED_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref SHIPPER_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref GELF_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
     pub static ref SYSLOG_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref FILES_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
 }
 
 pub(crate) fn to_grpc_metrics() -> Metrics {
@@ -30,6 +33,7 @@ pub(crate) fn to_grpc_metrics() -> Metrics {
         },
         processed_count: {
             let mut map = HashMap::new();
+            map.insert("files_in".into(), FILES_PROCESSED_COUNT.load(Relaxed));
             map.insert("glef_in".into(), GELF_PROCESSED_COUNT.load(Relaxed));
             map.insert("syslog_in".into(), SYSLOG_PROCESSED_COUNT.load(Relaxed));
             map.insert("grpc_out".into(), SHIPPER_PROCESSED_COUNT.load(Relaxed));
@@ -37,6 +41,7 @@ pub(crate) fn to_grpc_metrics() -> Metrics {
         },
         error_count: {
             let mut map = HashMap::new();
+            map.insert("files_in".into(), FILES_ERROR_COUNT.load(Relaxed));
             map.insert("glef_in".into(), GELF_ERROR_COUNT.load(Relaxed));
             map.insert("syslog_in".into(), SYSLOG_ERROR_COUNT.load(Relaxed));
             map.insert("grpc_out".into(), SHIPPER_ERROR_COUNT.load(Relaxed));

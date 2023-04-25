@@ -27,3 +27,7 @@ regex = {workspace = true}
 arc-swap = {workspace = true}
 async-channel = {workspace = true}
 syslog_loose = {workspace = true}
+linemux = {workspace = true}
+chrono = {workspace = true}
+iso8601 = {workspace = true}
+num-traits = {workspace = true}

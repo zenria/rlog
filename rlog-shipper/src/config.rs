@@ -2,7 +2,7 @@ use arc_swap::ArcSwap;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 lazy_static! {
     pub static ref CONFIG: ArcSwap<Config> = ArcSwap::new(Arc::new(Config::default()));
@@ -16,6 +16,8 @@ pub struct Config {
     pub gelf_in: GelfInputConfig,
     #[serde(default)]
     pub grpc_out: GrpcOutConfig,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub files_in: HashMap<String, FileParseConfig>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -76,4 +78,33 @@ pub struct SyslogExclusionFilter {
 pub struct GelfInputConfig {
     #[serde(flatten, default)]
     pub common: CommonInputConfig,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(tag = "mode")]
+pub enum FileParseConfig {
+    #[serde(rename = "regex")]
+    Regex {
+        #[serde(with = "serde_regex")]
+        pattern: Regex,
+        /// each group of the regex will be mapped to those names ;
+        mapping: Vec<FieldMapping>,
+    },
+    // TODO json
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FieldMapping {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: FieldType,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum FieldType {
+    Timestamp,
+    Number,
+    String,
+    SyslogLevelText,
 }

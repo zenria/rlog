@@ -20,7 +20,7 @@ use crate::{
     metrics::{self, GELF_ERROR_COUNT, GELF_QUEUE_COUNT},
 };
 
-pub struct GelfLog(serde_json::Value);
+pub struct GelfLog(pub serde_json::Value);
 
 impl GelfLog {
     pub fn to_json(&self) -> String {
