@@ -36,7 +36,7 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
                     field_type: FieldType::Timestamp,
                 },
                 FieldMapping {
-                    name: "level".into(),
+                    name: "severity".into(),
                     field_type: FieldType::SyslogLevelText,
                 },
                 FieldMapping {
@@ -48,7 +48,7 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
                     field_type: FieldType::String,
                 },
                 FieldMapping {
-                    name: "short_message".into(),
+                    name: "message".into(),
                     field_type: FieldType::String,
                 },
             ],

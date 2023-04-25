@@ -8,22 +8,21 @@ use linemux::MuxedLines;
 use num_traits::FromPrimitive;
 use rlog_common::utils::format_error;
 use rlog_grpc::rlog_service_protocol::SyslogSeverity;
-use serde_json::{json, Number};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::config::CONFIG;
+use crate::generic_log::GenericLog;
 use crate::{
     config::{FieldType, FileParseConfig},
-    gelf_server::GelfLog,
 };
 
 // Note: let's use the Gelf log repr which seems flexible enough ;)
 pub async fn watch_log(
     path: &str,
     shutdown_token: CancellationToken,
-) -> anyhow::Result<Receiver<GelfLog>> {
+) -> anyhow::Result<Receiver<GenericLog>> {
     // for now this is not configurable, we have only 1 buffer size
     let (sender, receiver) = async_channel::bounded(1);
 
@@ -50,7 +49,7 @@ pub async fn watch_log(
                                     // find right config ; if config cannot be found, stop watching the file
                                     match CONFIG.load().files_in.get(&path){
                                         Some(parse_config) => {
-                                            match parse_config.to_gelf(line.line()) {
+                                            match parse_config.to_gelf(line.line(), &path) {
                                                 Ok(log) => match sender.send(log).await {
                                                     Ok(_) => {},
                                                     Err(_closed) => tracing::error!("out channel closed"),
@@ -97,7 +96,7 @@ lazy_static! {
 }
 
 impl FileParseConfig {
-    pub fn to_gelf(&self, line: &str) -> anyhow::Result<GelfLog> {
+    pub fn to_gelf(&self, line: &str, file: &str) -> anyhow::Result<GenericLog> {
         match self {
             FileParseConfig::Regex { pattern, mapping } => {
                 let captures = pattern
@@ -106,6 +105,12 @@ impl FileParseConfig {
 
                 let mut map = serde_json::Map::new();
 
+                let mut host = None;
+                let mut timestamp = None;
+                let mut service_name = None;
+                let mut severity = None;
+                let mut message = None;
+
                 for i in 0..mapping.len() {
                     let field_name = &mapping[i].name;
                     let field_value = captures
@@ -113,12 +118,36 @@ impl FileParseConfig {
                         .ok_or_else(|| anyhow!("missing capture group for field {field_name}"))?
                         .as_str()
                         .trim();
+                    if field_name == "timestamp" {
+                        timestamp = Some(parse_timestamp(field_value).with_context(|| {
+                            anyhow!("Incorrect value for field {field_name}: {field_value}")
+                        })?);
+                        continue;
+                    }
+                    if field_name == "host" {
+                        host = Some(field_value.to_string());
+                        continue;
+                    }
+                    if field_name == "message" {
+                        message = Some(field_value.to_string());
+                        continue;
+                    }
+                    if field_name == "service_name" {
+                        service_name = Some(field_value.to_string());
+                        continue;
+                    }
+                    if field_name == "severity" {
+                        severity = SyslogSeverity::from_str_name(field_value.trim());
+                        continue;
+                    }
                     let field_value = match &mapping[i].field_type {
                         FieldType::String => serde_json::Value::String(field_value.to_string()),
-                        FieldType::Timestamp => serde_json::Value::Number(
-                            Number::from_f64(parse_timestamp(field_value)?).ok_or_else(|| {
-                                anyhow!("Incorrect value for field {field_name}: {field_value}")
-                            })?,
+                        FieldType::Timestamp => serde_json::Value::String(
+                            parse_timestamp(field_value)
+                                .with_context(|| {
+                                    anyhow!("Incorrect value for field {field_name}: {field_value}")
+                                })?
+                                .to_rfc3339(),
                         ),
                         FieldType::Number => {
                             serde_json::Value::Number(field_value.parse().with_context(|| {
@@ -132,22 +161,25 @@ impl FileParseConfig {
                                 .into(),
                         ),
                     };
+
                     map.insert(field_name.clone(), field_value);
                 }
 
-                map.insert("version".into(), json!("1.1"));
-
-                if !map.contains_key("host") {
-                    map.insert("host".into(), HOSTNAME.as_str().into());
-                }
-
-                Ok(GelfLog(map.into()))
+                Ok(GenericLog {
+                    host: host.unwrap_or(HOSTNAME.to_string()),
+                    timestamp: timestamp.unwrap_or_else(|| Utc::now()),
+                    severity: severity.unwrap_or(SyslogSeverity::Info),
+                    log_system: "file_in".into(),
+                    message: message.ok_or_else(|| anyhow!("No message field defined!"))?,
+                    extra: map.into(),
+                    service_name: service_name.unwrap_or_else(|| file.to_string()),
+                })
             }
         }
     }
 }
 
-fn parse_timestamp(ts: &str) -> anyhow::Result<f64> {
+fn parse_timestamp(ts: &str) -> anyhow::Result<DateTime<Utc>> {
     iso8601::datetime(ts)
         .map(|dt| {
             let tz = FixedOffset::east_opt(
@@ -186,5 +218,5 @@ fn parse_timestamp(ts: &str) -> anyhow::Result<f64> {
         .and_then(|r| r)
         .or_else(|_| DateTime::parse_from_rfc3339(ts).context("Unable to parse date"))
         .or_else(|_| DateTime::parse_from_rfc2822(ts).context("Unable to parse date"))
-        .map(|dt| dt.timestamp_micros() as f64 / 1_000_000f64)
+        .map(|dt| dt.into())
 }

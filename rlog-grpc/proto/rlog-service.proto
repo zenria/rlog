@@ -22,7 +22,7 @@ message LogLine {
     oneof line {
         GelfLogLine gelf = 4;
         SyslogLogLine syslog = 5;
-        //MinimalLogLine minimal = 7;
+        GenericLogLine generic_log = 7;
     }
 }
 
@@ -62,11 +62,15 @@ message SyslogLogLine {
     string msg=10;
 }
 
-message MinimalLogLine {
+/// minimal log line, no assumption about the underlying system
+message GenericLogLine {
     string message = 1;
     SyslogSeverity severity = 2;
+    string service_name = 3;
     // extra fields, as a json object - can be an empty object `{}`
-    string extra = 3;
+    string extra = 4;
+
+    string log_system = 5;
 
 }
 

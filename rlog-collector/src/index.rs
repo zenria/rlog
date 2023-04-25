@@ -20,6 +20,7 @@ use crate::metrics::{
 pub enum LogSystem {
     Syslog,
     Gelf,
+    Generic(String),
 }
 
 /// What is being indexed by quickwit
@@ -223,6 +224,27 @@ impl TryFrom<LogLine> for IndexLogEntry {
                     severity_number: severity_number as u64,
                     log_system: LogSystem::Syslog,
                     free_fields,
+                })
+            }
+            rlog_grpc::rlog_service_protocol::log_line::Line::GenericLog(generic) => {
+                let severity = OTELSeverity::from(generic.severity());
+                let message = generic.message;
+                let extra: HashMap<String, serde_json::Value> =
+                    serde_json::from_str(&generic.extra)
+                        .context("`extra` field is not a valid json object")?;
+
+                let severity_text = severity.to_string();
+                let severity_number = severity as u8;
+                let timestamp_ms = timestamp.seconds * 1000 + (timestamp.nanos as i64) / 1_000_000;
+                Ok(IndexLogEntry {
+                    message,
+                    timestamp: timestamp_ms as u64,
+                    hostname,
+                    service_name: generic.service_name,
+                    severity_text,
+                    severity_number: severity_number as u64,
+                    log_system: LogSystem::Generic(generic.log_system),
+                    free_fields: extra,
                 })
             }
         }

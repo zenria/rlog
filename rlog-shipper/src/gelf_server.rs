@@ -7,11 +7,7 @@ use bytes::BytesMut;
 use futures::FutureExt;
 use rlog_grpc::rlog_service_protocol::{GelfLogLine, LogLine};
 use serde_json::Value;
-use tokio::{
-    io::AsyncReadExt,
-    net::TcpListener,
-    select,
-};
+use tokio::{io::AsyncReadExt, net::TcpListener, select};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 

@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 pub mod config;
 mod forward_loop;
 mod gelf_server;
+mod generic_log;
 mod grpc_out;
 mod log_file;
 mod metrics;
