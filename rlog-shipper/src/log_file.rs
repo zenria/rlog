@@ -49,7 +49,7 @@ pub async fn watch_log(
                                     // find right config ; if config cannot be found, stop watching the file
                                     match CONFIG.load().files_in.get(&path){
                                         Some(parse_config) => {
-                                            match parse_config.to_gelf(line.line(), &path) {
+                                            match parse_config.to_log(line.line(), &path) {
                                                 Ok(log) => match sender.send(log).await {
                                                     Ok(_) => {},
                                                     Err(_closed) => tracing::error!("out channel closed"),
@@ -96,7 +96,7 @@ lazy_static! {
 }
 
 impl FileParseConfig {
-    pub fn to_gelf(&self, line: &str, file: &str) -> anyhow::Result<GenericLog> {
+    pub fn to_log(&self, line: &str, file: &str) -> anyhow::Result<GenericLog> {
         match self {
             FileParseConfig::Regex { pattern, mapping } => {
                 let captures = pattern
