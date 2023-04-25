@@ -90,7 +90,6 @@ pub async fn launch_gelf_server(
                                             .find(|(_i, byte)| byte == &&0)
                                             .map(|(i, _)| i)
                                         {
-                                            
                                             let frame = buffer.split_to(i + 1);
                                             // there is a message between 0..i (the last byte is 0x0 we must not feed the json
                                             // parser with this)
@@ -124,11 +123,9 @@ pub async fn launch_gelf_server(
                                                     tracing::error!("Unable to decode json: {e}")
                                                 }
                                             }
-                                            
                                         }
                                     }
                                 }
-
                             }
                             tracing::info!("Connection closed.");
                         }
@@ -140,9 +137,10 @@ pub async fn launch_gelf_server(
     }
     .then(|_| async {
         tracing::info!("GELF server stopped, processed: {}, errors: {}, in_queue: {}", 
-            metrics::GELF_PROCESSED_COUNT.load(Ordering::Relaxed), 
+            metrics::GELF_PROCESSED_COUNT.load(Ordering::Relaxed),
             metrics::GELF_ERROR_COUNT.load(Ordering::Relaxed),
-            metrics::GELF_QUEUE_COUNT.load(Ordering::Relaxed))
+            metrics::GELF_QUEUE_COUNT.load(Ordering::Relaxed),
+        )
     }));
 
     Ok(receiver)

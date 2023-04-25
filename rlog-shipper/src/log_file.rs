@@ -13,10 +13,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::config::CONFIG;
+use crate::config::{FieldType, FileParseConfig};
 use crate::generic_log::GenericLog;
-use crate::{
-    config::{FieldType, FileParseConfig},
-};
 
 // Note: let's use the Gelf log repr which seems flexible enough ;)
 pub async fn watch_log(
@@ -34,7 +32,6 @@ pub async fn watch_log(
 
     tokio::spawn(
         async move {
-            
             select! {
                 _ = shutdown_token.cancelled() => {
                     // shutting down
@@ -62,8 +59,6 @@ pub async fn watch_log(
                                             return;
                                         },
                                     }
-                                    
-
                                 }
                                 None=> {
                                     tracing::error!("This is not possible by contruction");
