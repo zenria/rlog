@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Context};
 use async_channel::Receiver;
 use chrono::prelude::*;
@@ -12,8 +14,8 @@ use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use crate::config::CONFIG;
 use crate::config::{FieldType, FileParseConfig};
+use crate::config::{FileMappingConfig, CONFIG};
 use crate::generic_log::GenericLog;
 
 // Note: let's use the Gelf log repr which seems flexible enough ;)
@@ -25,6 +27,10 @@ pub async fn watch_log(
     let (sender, receiver) = async_channel::bounded(1);
 
     let path = path.to_owned();
+    let filename = PathBuf::from(&path)
+        .file_name()
+        .and_then(|f| Some(f.to_string_lossy().to_string()))
+        .unwrap_or_else(|| path.clone());
     let file = path.clone(); // used in tracing span
     let mut lines = MuxedLines::new()?;
     lines.add_file(&path).await?;
@@ -46,7 +52,7 @@ pub async fn watch_log(
                                     // find right config ; if config cannot be found, stop watching the file
                                     match CONFIG.load().files_in.get(&path){
                                         Some(parse_config) => {
-                                            match parse_config.to_log(line.line(), &path) {
+                                            match parse_config.to_log(line.line(), &filename) {
                                                 Ok(log) => match sender.send(log).await {
                                                     Ok(_) => {},
                                                     Err(_closed) => tracing::error!("out channel closed"),
@@ -92,13 +98,17 @@ lazy_static! {
 
 impl FileParseConfig {
     pub fn to_log(&self, line: &str, file: &str) -> anyhow::Result<GenericLog> {
-        match self {
-            FileParseConfig::Regex { pattern, mapping } => {
+        let mut map = serde_json::Map::new();
+        map.extend(
+            self.static_fields
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone())),
+        );
+        match &self.mapping {
+            FileMappingConfig::Regex { pattern, mapping } => {
                 let captures = pattern
                     .captures(line)
                     .ok_or_else(|| anyhow!("Not matching line: {line}"))?;
-
-                let mut map = serde_json::Map::new();
 
                 let mut host = None;
                 let mut timestamp = None;

@@ -7,7 +7,7 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
     use regex::Regex;
     use rlog_collector::LogSystem;
     use rlog_common::utils::init_logging;
-    use rlog_shipper::config::{FieldMapping, FieldType, FileParseConfig};
+    use rlog_shipper::config::{FieldMapping, FieldType, FileMappingConfig, FileParseConfig};
     use serde_json::json;
     use std::{
         collections::HashMap,
@@ -26,32 +26,41 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
     let mut files_in = HashMap::new();
     files_in.insert(
         tmp_file.path().to_string_lossy().to_string(),
-        FileParseConfig::Regex {
-            pattern: Regex::new(r#"^\[([^\]]+)\]\[([^\]]+) *\]\[([^\]]+)\] \[([^\]]+)\] (.*)$"#)
+        FileParseConfig {
+            mapping: FileMappingConfig::Regex {
+                pattern: Regex::new(
+                    r#"^\[([^\]]+)\]\[([^\]]+) *\]\[([^\]]+)\] \[([^\]]+)\] (.*)$"#,
+                )
                 .unwrap(),
 
-            mapping: vec![
-                FieldMapping {
-                    name: "timestamp".into(),
-                    field_type: FieldType::Timestamp,
-                },
-                FieldMapping {
-                    name: "severity".into(),
-                    field_type: FieldType::SyslogLevelText,
-                },
-                FieldMapping {
-                    name: "_logger".into(),
-                    field_type: FieldType::String,
-                },
-                FieldMapping {
-                    name: "host".into(),
-                    field_type: FieldType::String,
-                },
-                FieldMapping {
-                    name: "message".into(),
-                    field_type: FieldType::String,
-                },
-            ],
+                mapping: vec![
+                    FieldMapping {
+                        name: "timestamp".into(),
+                        field_type: FieldType::Timestamp,
+                    },
+                    FieldMapping {
+                        name: "severity".into(),
+                        field_type: FieldType::SyslogLevelText,
+                    },
+                    FieldMapping {
+                        name: "_logger".into(),
+                        field_type: FieldType::String,
+                    },
+                    FieldMapping {
+                        name: "host".into(),
+                        field_type: FieldType::String,
+                    },
+                    FieldMapping {
+                        name: "message".into(),
+                        field_type: FieldType::String,
+                    },
+                ],
+            },
+            static_fields: {
+                let mut map = HashMap::new();
+                map.insert("env".into(), "prod".into());
+                map
+            },
         },
     );
 

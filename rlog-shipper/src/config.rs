@@ -2,6 +2,7 @@ use arc_swap::ArcSwap;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
 
 lazy_static! {
@@ -81,8 +82,15 @@ pub struct GelfInputConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct FileParseConfig {
+    #[serde(flatten)]
+    pub mapping: FileMappingConfig,
+    pub static_fields: HashMap<String, Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "mode")]
-pub enum FileParseConfig {
+pub enum FileMappingConfig {
     #[serde(rename = "regex")]
     Regex {
         #[serde(with = "serde_regex")]
@@ -100,7 +108,7 @@ pub struct FieldMapping {
     pub field_type: FieldType,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum FieldType {
     Timestamp,
