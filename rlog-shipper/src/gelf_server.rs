@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
-    config::{Config, CONFIG},
+    config::{Config, GelfInputConfig, CONFIG},
     metrics::{self, GELF_ERROR_COUNT, GELF_QUEUE_COUNT},
 };
 
@@ -29,7 +29,10 @@ pub async fn launch_gelf_server(
     shutdown_token: CancellationToken,
 ) -> anyhow::Result<Receiver<GelfLog>> {
     let config = CONFIG.map(|config: &Config| &config.gelf_in);
-    let (sender, receiver) = async_channel::bounded(config.load().common.max_buffer_size);
+    let (sender, receiver) = async_channel::bounded(match config.load().as_ref() {
+        Some(config) => config.common.max_buffer_size,
+        None => GelfInputConfig::default().common.max_buffer_size,
+    });
 
     let listener = TcpListener::bind(bind_address)
         .await

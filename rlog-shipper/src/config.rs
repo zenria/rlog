@@ -11,12 +11,9 @@ lazy_static! {
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Config {
-    #[serde(default)]
-    pub syslog_in: SyslogInputConfig,
-    #[serde(default)]
-    pub gelf_in: GelfInputConfig,
-    #[serde(default)]
-    pub grpc_out: GrpcOutConfig,
+    pub syslog_in: Option<SyslogInputConfig>,
+    pub gelf_in: Option<GelfInputConfig>,
+    pub grpc_out: Option<GrpcOutConfig> ,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub files_in: HashMap<String, FileParseConfig>,
 }

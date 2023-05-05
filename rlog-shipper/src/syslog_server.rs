@@ -12,7 +12,7 @@ use tokio::{net::UdpSocket, select};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{Config, CONFIG},
+    config::{Config, SyslogInputConfig, CONFIG},
     metrics::{SYSLOG_ERROR_COUNT, SYSLOG_QUEUE_COUNT},
 };
 
@@ -29,7 +29,10 @@ pub async fn launch_syslog_udp_server(
     shutdown_token: CancellationToken,
 ) -> anyhow::Result<Receiver<SyslogLog>> {
     let config = CONFIG.map(|config: &Config| &config.syslog_in);
-    let (sender, receiver) = async_channel::bounded(config.load().common.max_buffer_size);
+    let (sender, receiver) = async_channel::bounded(match config.load().as_ref() {
+        Some(config) => config.common.max_buffer_size,
+        None => SyslogInputConfig::default().common.max_buffer_size,
+    });
 
     let socket = UdpSocket::bind(&bind_address)
         .await
@@ -102,12 +105,18 @@ pub async fn launch_syslog_udp_server(
 mod filters {
     use syslog_loose::Message;
 
-    use crate::config::CONFIG;
+    use crate::config::{SyslogExclusionFilter, CONFIG};
 
     pub(super) fn is_excluded<T: AsRef<str> + Ord + PartialEq + Clone>(
         message: &Message<T>,
     ) -> bool {
-        for exclusion_filter in &CONFIG.load().syslog_in.exclusion_filters {
+        static EMPTY_FILTERS: Vec<SyslogExclusionFilter> = vec![];
+        let config = CONFIG.load();
+        let filters = match config.syslog_in.as_ref() {
+            Some(config) => &config.exclusion_filters,
+            None => &EMPTY_FILTERS,
+        };
+        for exclusion_filter in filters {
             // message will be excluded only if shall_exclude==Some(true)
             let mut shall_exclude = None;
             if let (Some(pattern), Some(appname)) = (&exclusion_filter.appname, &message.appname) {
@@ -172,14 +181,14 @@ mod filters {
         assert!(!is_excluded(&message));
 
         let new_config = Config {
-            syslog_in: SyslogInputConfig {
+            syslog_in: Some(SyslogInputConfig {
                 exclusion_filters: vec![SyslogExclusionFilter {
                     appname: Some(Regex::new("my-ultimate-app.*").unwrap()),
                     facility: None,
                     message: Some(Regex::new("natty").unwrap()),
                 }],
                 ..Default::default()
-            },
+            }),
             ..Default::default()
         };
         CONFIG.store(Arc::new(new_config));

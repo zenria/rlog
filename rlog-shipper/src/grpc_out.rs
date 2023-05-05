@@ -15,7 +15,7 @@ use tokio_stream::{wrappers::IntervalStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::CONFIG,
+    config::{GrpcOutConfig, CONFIG},
     metrics::{to_grpc_metrics, SHIPPER_ERROR_COUNT, SHIPPER_PROCESSED_COUNT, SHIPPER_QUEUE_COUNT},
 };
 
@@ -23,7 +23,10 @@ pub fn launch_grpc_shipper(
     endpoint: Endpoint,
     shutdown_token: CancellationToken,
 ) -> (Sender<LogLine>, JoinHandle<()>) {
-    let (sender, receiver) = async_channel::bounded(CONFIG.load().grpc_out.max_buffer_size);
+    let (sender, receiver) = async_channel::bounded(match CONFIG.load().grpc_out.as_ref() {
+        Some(config) => config.max_buffer_size,
+        None => GrpcOutConfig::default().max_buffer_size,
+    });
 
     let handle = tokio::spawn(async move {
         let mut current_log_line: Option<LogLine> = None;
