@@ -12,8 +12,15 @@ use arc_swap::ArcSwap;
 use glob::{glob_with, MatchOptions};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{iter::once, path::Path, sync::Arc};
+use tokio::{
+    sync::watch::{self, Receiver},
+    time::sleep,
+};
 
-use crate::config::load_config;
+use crate::{
+    config::{load_config, CONFIG_REFRESH_INTERVAL},
+    utils::format_error,
+};
 
 /// Load all the config files from the given directory.
 ///
@@ -27,9 +34,9 @@ pub fn setup_config_from_dir<C, D>(
     directory: D,
     glob: &str,
     config_store: &'static ArcSwap<C>,
-) -> anyhow::Result<()>
+) -> anyhow::Result<Receiver<()>>
 where
-    C: DeserializeOwned + Serialize + Send + Sync + Default + Extend<C>,
+    C: DeserializeOwned + Serialize + Send + Sync + Default + Extend<C> + Eq,
     D: AsRef<Path>,
 {
     if glob.starts_with("/") {
@@ -43,8 +50,43 @@ where
         .into_owned();
     tracing::debug!("Config file glob pattern: {glob}");
 
-    let mut root_config = C::default();
+    let initial_config = read_config(&glob)?;
 
+    config_store.swap(Arc::new(initial_config));
+
+    let (sender, receiver) = watch::channel(());
+    tokio::spawn(async move {
+        let glob = glob;
+        loop {
+            sleep(CONFIG_REFRESH_INTERVAL).await;
+            match read_config::<C>(&glob) {
+                Ok(new_config) => {
+                    if &new_config != config_store.load().as_ref() {
+                        // new config!!
+                        tracing::debug!("Refreshed configuration from {glob}");
+                        config_store.store(Arc::new(new_config));
+                        if let Err(e) = sender.send(()) {
+                            // channel closed,
+                            return;
+                        }
+                    }
+                }
+                Err(e) => tracing::error!(
+                    "Unable to read configuration from {glob}: {}",
+                    format_error(e)
+                ),
+            }
+        }
+    });
+
+    Ok(receiver)
+}
+
+fn read_config<C>(glob: &str) -> Result<C, anyhow::Error>
+where
+    C: DeserializeOwned + Serialize + Send + Sync + Default + Extend<C> + Eq,
+{
+    let mut root_config = C::default();
     for path in glob_with(
         &glob,
         MatchOptions {
@@ -61,10 +103,7 @@ where
         }
     }
     tracing::debug!("Final config: {}", serde_yaml::to_string(&root_config)?);
-
-    config_store.swap(Arc::new(root_config));
-
-    Ok(())
+    Ok(root_config)
 }
 
 #[cfg(test)]
@@ -75,7 +114,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use tempfile::tempdir;
 
-    #[derive(Serialize, Deserialize, Default)]
+    #[derive(Serialize, Deserialize, Default, PartialEq, Eq)]
     struct TestConfig(HashMap<String, String>);
 
     impl Extend<TestConfig> for TestConfig {
@@ -86,8 +125,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn test() {
+    #[tokio::test]
+    async fn test() {
         let dir = tempdir().unwrap();
 
         // lol, you should probably not use that in real code ;)

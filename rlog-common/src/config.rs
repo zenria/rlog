@@ -8,6 +8,7 @@ use std::{
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use serde::{de::DeserializeOwned, Serialize};
+use tokio::sync::watch::{self, Receiver};
 
 use crate::utils::format_error;
 
@@ -18,8 +19,10 @@ pub mod dir;
 pub fn setup_config_from_file<C: DeserializeOwned + Serialize + Send + Sync>(
     path: &str,
     config: &'static ArcSwap<C>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Receiver<()>> {
     let mut last_modified = load_and_swap_config(path, config)?;
+
+    let (sender, receiver) = watch::channel(());
 
     let path = path.to_string();
     tokio::spawn(async move {
@@ -35,6 +38,10 @@ pub fn setup_config_from_file<C: DeserializeOwned + Serialize + Send + Sync>(
                                 "New config:\n{}",
                                 serde_yaml::to_string(config.load().as_ref()).unwrap()
                             );
+                            if let Err(_) = sender.send(()) {
+                                // channel closed!
+                                return;
+                            }
                         }
                         Err(e) => tracing::error!("Unable to reload config: {}", format_error(e)),
                     }
@@ -43,7 +50,7 @@ pub fn setup_config_from_file<C: DeserializeOwned + Serialize + Send + Sync>(
         }
     });
 
-    Ok(())
+    Ok(receiver)
 }
 
 fn load_and_swap_config<P: AsRef<Path>, C: DeserializeOwned>(

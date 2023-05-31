@@ -148,9 +148,7 @@ mod filters {
     fn test_excluded() {
         use std::{sync::Arc, vec};
 
-        use regex::Regex;
-
-        use crate::config::{Config, SyslogExclusionFilter, SyslogInputConfig};
+        use crate::config::{eqregex::EqRegex, Config, SyslogExclusionFilter, SyslogInputConfig};
 
         let message = Message {
             protocol: syslog_loose::Protocol::RFC5424(0),
@@ -183,9 +181,9 @@ mod filters {
         let new_config = Config {
             syslog_in: Some(SyslogInputConfig {
                 exclusion_filters: vec![SyslogExclusionFilter {
-                    appname: Some(Regex::new("my-ultimate-app.*").unwrap()),
+                    appname: Some(EqRegex::new("my-ultimate-app.*").unwrap()),
                     facility: None,
-                    message: Some(Regex::new("natty").unwrap()),
+                    message: Some(EqRegex::new("natty").unwrap()),
                 }],
                 ..Default::default()
             }),
