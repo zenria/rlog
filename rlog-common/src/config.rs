@@ -13,6 +13,8 @@ use crate::utils::format_error;
 
 const CONFIG_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
+pub mod dir;
+
 pub fn setup_config_from_file<C: DeserializeOwned + Serialize + Send + Sync>(
     path: &str,
     config: &'static ArcSwap<C>,

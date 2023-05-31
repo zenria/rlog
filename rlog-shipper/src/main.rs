@@ -1,9 +1,9 @@
-use std::{str::FromStr, time::Duration};
+use std::{process, str::FromStr, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
 use rlog_common::{
-    config::setup_config_from_file,
+    config::{dir::setup_config_from_dir, setup_config_from_file},
     utils::{init_logging, read_file},
 };
 use rlog_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
@@ -39,9 +39,19 @@ struct Opts {
     #[arg(long, env, default_value = "127.0.0.1:12201")]
     gelf_tcp_bind_address: String,
 
-    /// Configuration file, if not provided, a minimal default configuration will be used
+    /// Configuration file, if not provided, a minimal default configuration will be used.
+    /// This option cannot be used if a configuration directory is provided
     #[arg(long, short, env)]
     config: Option<String>,
+
+    /// Configuration directory, if provided, all configuration files matching
+    /// configuration directory files pattern will be used to create the configuration.
+    /// This option cannot be used if a configuration file is provided.
+    #[arg(long, env)]
+    config_directory: Option<String>,
+
+    #[arg(long, env, default_value = "*.yml")]
+    config_directory_files_pattern: String,
 }
 
 #[tokio::main]
@@ -54,8 +64,17 @@ async fn main() -> anyhow::Result<()> {
 
     let opts = Opts::parse();
 
+    if opts.config.is_some() && opts.config_directory.is_some() {
+        eprintln!("Invalid options: both a configuration file and a configuration directory has been provided\nPlease make a choice!");
+        process::exit(1);
+    }
+
     if let Some(path) = opts.config.as_ref() {
         setup_config_from_file(path, &CONFIG)?;
+    } else if let Some(path) = opts.config_directory.as_ref() {
+        setup_config_from_dir(path, &opts.config_directory_files_pattern, &CONFIG)?;
+    } else {
+        tracing::debug!("No configuration provided, using default.")
     }
 
     tracing::info!(

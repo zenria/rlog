@@ -13,7 +13,7 @@ lazy_static! {
 pub struct Config {
     pub syslog_in: Option<SyslogInputConfig>,
     pub gelf_in: Option<GelfInputConfig>,
-    pub grpc_out: Option<GrpcOutConfig> ,
+    pub grpc_out: Option<GrpcOutConfig>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub files_in: HashMap<String, FileParseConfig>,
 }
@@ -112,4 +112,35 @@ pub enum FieldType {
     Number,
     String,
     SyslogLevelText,
+}
+
+trait ExtendableOption<T> {
+    fn extend_option(&mut self, other: Option<T>);
+}
+
+impl<T> ExtendableOption<T> for Option<T> {
+    fn extend_option(&mut self, other: Option<T>) {
+        if other.is_some() {
+            *self = other;
+        }
+    }
+}
+
+// config can be extends by itself ;)
+//
+impl Extend<Config> for Config {
+    fn extend<T: IntoIterator<Item = Config>>(&mut self, iter: T) {
+        for Config {
+            syslog_in,
+            gelf_in,
+            grpc_out,
+            files_in,
+        } in iter
+        {
+            self.syslog_in.extend_option(syslog_in);
+            self.gelf_in.extend_option(gelf_in);
+            self.grpc_out.extend_option(grpc_out);
+            self.files_in.extend(files_in);
+        }
+    }
 }
