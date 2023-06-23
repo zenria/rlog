@@ -4,7 +4,6 @@ use std::io::Write;
 #[tokio::test]
 async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
     use integration::test_utils::{self, BindAddresses, GelfLog};
-    use regex::Regex;
     use rlog_collector::LogSystem;
     use rlog_common::utils::init_logging;
     use rlog_shipper::config::{
