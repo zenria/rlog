@@ -65,7 +65,7 @@ where
                         // new config!!
                         tracing::debug!("Refreshed configuration from {glob}");
                         config_store.store(Arc::new(new_config));
-                        if let Err(e) = sender.send(()) {
+                        if let Err(_e) = sender.send(()) {
                             // channel closed,
                             return;
                         }

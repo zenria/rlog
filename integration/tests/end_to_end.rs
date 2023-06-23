@@ -7,7 +7,9 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
     use regex::Regex;
     use rlog_collector::LogSystem;
     use rlog_common::utils::init_logging;
-    use rlog_shipper::config::{FieldMapping, FieldType, FileMappingConfig, FileParseConfig};
+    use rlog_shipper::config::{
+        eqregex::EqRegex, FieldMapping, FieldType, FileMappingConfig, FileParseConfig,
+    };
     use serde_json::json;
     use std::{
         collections::HashMap,
@@ -28,7 +30,7 @@ async fn nominal_end_to_end() -> Result<(), Box<dyn std::error::Error>> {
         tmp_file.path().to_string_lossy().to_string(),
         FileParseConfig {
             mapping: FileMappingConfig::Regex {
-                pattern: Regex::new(
+                pattern: EqRegex::new(
                     r#"^\[([^\]]+)\]\[([^\]]+) *\]\[([^\]]+)\] \[([^\]]+)\] (.*)$"#,
                 )
                 .unwrap(),
