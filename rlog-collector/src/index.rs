@@ -46,6 +46,71 @@ pub struct IndexLogEntry {
     pub free_fields: HashMap<String, serde_json::Value>,
 }
 
+enum Batch<T> {
+    Single(Vec<T>),
+    Splitted { to_send: Vec<T>, remaining: Vec<T> },
+    None,
+}
+impl<T> Batch<T> {
+    fn pop_elements(&mut self) -> Option<Vec<T>> {
+        match std::mem::replace(self, Batch::None) {
+            Batch::Single(elements) => Some(elements),
+            Batch::Splitted { to_send, remaining } => {
+                *self = Batch::Single(remaining);
+                Some(to_send)
+            }
+            Batch::None => None,
+        }
+    }
+
+    fn split_because_of_err(&mut self, mut elements: Vec<T>) {
+        if elements.len() <= 1 {
+            // last element cannot be splitted, if it causes the error, it must be discarded
+            return;
+        }
+        // it is sure we have at least 2 elements in our elements vector.
+        let remaining = elements.split_off(elements.len() / 2);
+        *self = match std::mem::replace(self, Batch::None) {
+            Batch::Single(single) => Batch::Splitted {
+                to_send: elements,
+                remaining: remaining.into_iter().chain(single).collect(),
+            },
+            Batch::Splitted {
+                to_send: _,
+                remaining: _,
+            } => {
+                panic!("split_because_of_err called twice without calling pop_elements in between")
+            }
+            Batch::None => Batch::Splitted {
+                to_send: elements,
+                remaining,
+            },
+        };
+    }
+    fn push_elements(&mut self, elements: Vec<T>) {
+        match self {
+            Batch::Single(existing) => existing.extend(elements.into_iter()),
+            Batch::Splitted {
+                to_send: _,
+                remaining,
+            } => remaining.extend(elements.into_iter()),
+            // Note: only this case is nominal, using the other cases may fill the RAM
+            Batch::None => *self = Batch::Single(elements),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            Batch::Single(_) => false,
+            Batch::Splitted {
+                to_send: _,
+                remaining: _,
+            } => false,
+            Batch::None => true,
+        }
+    }
+}
+
 pub fn launch_index_loop(
     quickwit_rest_url: &str,
     index_id: &str,
@@ -62,25 +127,23 @@ pub fn launch_index_loop(
 
     Ok(tokio::spawn(
         async move {
-            let mut batch_to_send: Option<String> = None;
-            let mut batch_count = 0;
+            let mut batch_to_send = Batch::None;
             loop {
-                if let Some(body) = batch_to_send.take() {
-                    tracing::debug!("Sending to quickwit {batch_count} items:\n{body}");
+                if let Some(batch) = batch_to_send.pop_elements() {
+                    let body = batch
+                        .iter()
+                        .map(|j| serde_json::to_string(&j).unwrap())
+                        .join("\n");
+                    tracing::debug!("Sending to quickwit {} items:\n{body}", batch.len());
                     // send the stuff
-                    match http_client
-                        .post(ingest_url.clone())
-                        .body(body.clone())
-                        .send()
-                        .await
-                    {
+                    match http_client.post(ingest_url.clone()).body(body).send().await {
                         Ok(quickwit_response) => {
                             match quickwit_response.status() {
                                 StatusCode::OK => {
                                     // consume response
                                     let _response = quickwit_response.text().await;
                                     tracing::debug!("OK");
-                                    COLLECTOR_INDEXED_COUNT.inc_by(batch_count);
+                                    COLLECTOR_INDEXED_COUNT.inc_by(batch.len() as u64);
                                     COLLECTOR_OUTPUT_COUNT
                                         .with_label_values(&[
                                             OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
@@ -95,7 +158,7 @@ pub fn launch_index_loop(
                                     tracing::warn!(
                                         "Quickwit overloaded (429), wait 5 seconds before retrying"
                                     );
-                                    batch_to_send = Some(body);
+                                    batch_to_send.push_elements(batch);
                                     COLLECTOR_OUTPUT_COUNT
                                         .with_label_values(&[
                                             OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
@@ -107,15 +170,32 @@ pub fn launch_index_loop(
                                 }
                                 other => {
                                     let response = quickwit_response.text().await;
-                                    tracing::error!("Unhandled status code {other} - {response:?}");
-                                    // retry batch
-                                    batch_to_send = Some(body);
-                                    COLLECTOR_OUTPUT_COUNT
-                                        .with_label_values(&[
-                                            OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
-                                            OUTPUT_STATUS_ERROR_LABEL_VALUE,
-                                        ])
-                                        .inc();
+
+                                    if other == StatusCode::BAD_REQUEST
+                                        && response
+                                            .as_ref()
+                                            .map(|r| r.contains("The request payload is too large"))
+                                            .unwrap_or(false)
+                                    {
+                                        // payload too large
+                                        tracing::warn!(
+                                            "Payload too large for quickwit, trying to split it!"
+                                        );
+                                        batch_to_send.split_because_of_err(batch);
+                                    } else {
+                                        tracing::error!(
+                                            "Unhandled status code {other} - {response:?}"
+                                        );
+                                        // retry batch
+                                        batch_to_send.push_elements(batch);
+                                        COLLECTOR_OUTPUT_COUNT
+                                            .with_label_values(&[
+                                                OUTPUT_SYSTEM_QUICKWIT_LABEL_VALUE,
+                                                OUTPUT_STATUS_ERROR_LABEL_VALUE,
+                                            ])
+                                            .inc();
+                                    }
+
                                     tokio::time::sleep(Duration::from_secs(1)).await;
                                     continue;
                                 }
@@ -126,25 +206,22 @@ pub fn launch_index_loop(
                             tracing::error!(
                                 "Error sending batch to quickwit, retry in 1s - {quickwit_error}"
                             );
-                            batch_to_send = Some(body);
+                            batch_to_send.push_elements(batch);
                             tokio::time::sleep(Duration::from_secs(1)).await;
                             continue;
                         }
                     }
                 }
-                match batch_receiver.recv().await {
-                    Ok(batch) => {
-                        batch_count = batch.len() as u64;
-                        let body = batch
-                            .into_iter()
-                            .map(|j| serde_json::to_string(&j).unwrap())
-                            .join("\n");
-                        batch_to_send = Some(body);
-                    }
-                    // channel close (server shutdown)
-                    Err(_) => {
-                        tracing::info!("Input channel closed.");
-                        break;
+                if batch_to_send.is_empty() {
+                    match batch_receiver.recv().await {
+                        Ok(batch) => {
+                            batch_to_send.push_elements(batch);
+                        }
+                        // channel close (server shutdown)
+                        Err(_) => {
+                            tracing::info!("Input channel closed.");
+                            break;
+                        }
                     }
                 }
             }
