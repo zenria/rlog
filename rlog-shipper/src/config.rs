@@ -78,23 +78,22 @@ pub mod eqregex {
     use serde::{Deserialize, Serialize};
     use std::ops::Deref;
 
-    #[derive(Clone)]
+    #[derive(Clone, Serialize, Deserialize)]
     pub struct EqRegex {
+        #[serde(with = "serde_regex")]
         inner: Regex,
-        source: String,
     }
 
     impl EqRegex {
         pub fn new(regex: &str) -> Result<Self, regex::Error> {
             Ok(Self {
-                source: regex.to_string(),
                 inner: Regex::new(regex)?,
             })
         }
     }
     impl PartialEq for EqRegex {
         fn eq(&self, other: &Self) -> bool {
-            self.source == other.source
+            self.inner.as_str() == other.inner.as_str()
         }
     }
     impl Eq for EqRegex {}
@@ -104,27 +103,6 @@ pub mod eqregex {
 
         fn deref(&self) -> &Self::Target {
             &self.inner
-        }
-    }
-
-    impl Serialize for EqRegex {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            self.source.serialize(serializer)
-        }
-    }
-    impl<'de> Deserialize<'de> for EqRegex {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            let inner: Regex = serde_regex::deserialize(deserializer)?;
-            Ok(Self {
-                source: inner.to_string(),
-                inner,
-            })
         }
     }
 }
