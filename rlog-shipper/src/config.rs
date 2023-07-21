@@ -79,6 +79,7 @@ pub mod eqregex {
     use std::ops::Deref;
 
     #[derive(Clone, Serialize, Deserialize)]
+    #[serde(transparent)]
     pub struct EqRegex {
         #[serde(with = "serde_regex")]
         inner: Regex,
