@@ -249,7 +249,15 @@ impl TryFrom<LogLine> for IndexLogEntry {
         match line {
             rlog_grpc::rlog_service_protocol::log_line::Line::Gelf(gelf) => {
                 let severity = OTELSeverity::from(gelf.severity());
-                let message = gelf.full_message.unwrap_or(gelf.short_message);
+                let message = {
+                    match gelf.full_message {
+                        Some(full_message) if full_message != gelf.short_message => {
+                            format!("{}\n{full_message}", gelf.short_message)
+                        }
+                        // no full_message or full_message == short_message
+                        _ => gelf.short_message,
+                    }
+                };
                 let mut extra: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&gelf.extra)
                         .context("`extra` field is not a valid json object")?;
