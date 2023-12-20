@@ -1,14 +1,20 @@
-version: 0.5
+version: 0.6
 
-index_id: rlog
+index_id: rlog-v0_6
 
 doc_mapping:
   mode: dynamic
+  dynamic_mapping:
+    indexed: true
+    stored: true
+    tokenizer: default
+    record: position
+    expand_dots: true
+    fast: true
   field_mappings:
     - name: timestamp
       type: datetime
       input_formats: [unix_timestamp]
-      indexed: false
       fast: true
       # truncate the fast field to seconds precision
       precision: seconds
