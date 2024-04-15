@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 use rlog_collector::IndexLogEntry;
-use tokio::sync::RwLock;
+use tokio::{net::TcpListener, sync::RwLock};
 
 use crate::test_utils::BindAddresses;
 
@@ -50,10 +50,12 @@ impl MockQuickwitServer {
             .parse::<SocketAddr>()
             .expect("Invalid http status server bind address");
         tokio::spawn(async move {
-            axum::Server::bind(&sock_addr)
-                .serve(app.into_make_service())
-                .await
-                .unwrap();
+            axum::serve(
+                TcpListener::bind(&sock_addr).await.unwrap(),
+                app.into_make_service(),
+            )
+            .await
+            .unwrap();
         });
         Self { received }
     }

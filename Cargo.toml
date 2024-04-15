@@ -40,10 +40,10 @@ tonic = { version = "0.11", features = ["tls", "gzip"] }
 prost = "0.12"
 tracing = "0.1"
 lazy_static = "^1.4"
-itertools = "0.10"
+itertools = "0.12"
 arc-swap = "1.6"
 humantime = "2.1"
-async-channel = "1.8"
+async-channel = "^2.2"
 tonic-build = "0.11"
 protobuf-src = "1.0.5+3.19.3"
 async-stream = "0.3"
@@ -51,7 +51,7 @@ regex = "1"
 hostname = "0.4"
 syslog_loose = "0.21"
 prometheus = { version = "0.13", features = ["process"] }
-axum = "0.6"
+axum = "0.7"
 reqwest = { version = "0.12", default_features = false, features = [
     "json",
     "rustls-tls",

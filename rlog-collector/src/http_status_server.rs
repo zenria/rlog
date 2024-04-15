@@ -93,8 +93,10 @@ pub fn launch_server(bind_address: &str, quickwit_rest_url: &str) -> anyhow::Res
                 }),
             );
         tracing::info!("Starting HTTP status server {sock_addr}");
-        axum::Server::bind(&sock_addr)
-            .serve(app.into_make_service())
+        let listener = tokio::net::TcpListener::bind(&sock_addr)
+            .await
+            .expect("Unable to open listening socket");
+        axum::serve(listener, app.into_make_service())
             .await
             .unwrap();
     });

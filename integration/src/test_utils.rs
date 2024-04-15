@@ -1,8 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
-use axum::http::Uri;
 use rlog_collector::{CollectorServer, CollectorServerConfig};
-use rlog_grpc::tonic::transport::{Channel, Server};
+use rlog_grpc::tonic::transport::{Channel, Server, Uri};
 use rlog_shipper::{ServerConfig, ShipperServer};
 use serde::Serialize;
 use syslog::{Facility, Severity};
