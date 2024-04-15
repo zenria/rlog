@@ -27,7 +27,7 @@ pub struct GrpcOutConfig {
 impl Default for GrpcOutConfig {
     fn default() -> Self {
         Self {
-            /// This will not be hot reloaded (buffer is allocated at the start of the application)
+            // This will not be hot reloaded (buffer is allocated at the start of the application)
             max_buffer_size: 20_000,
         }
     }

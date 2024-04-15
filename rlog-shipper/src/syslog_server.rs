@@ -7,7 +7,7 @@ use futures::FutureExt;
 use rlog_grpc::rlog_service_protocol::{
     log_line::Line, LogLine, SyslogFacility, SyslogLogLine, SyslogSeverity,
 };
-use syslog_loose::Message;
+use syslog_loose::{Message, Variant};
 use tokio::{net::UdpSocket, select};
 use tokio_util::sync::CancellationToken;
 
@@ -68,7 +68,7 @@ pub async fn launch_syslog_udp_server(
                         let datagram = &buf[0..n];
                         let message = String::from_utf8_lossy(datagram);
                         tracing::debug!("Received {}", message);
-                        let message = syslog_loose::parse_message(&message);
+                        let message = syslog_loose::parse_message(&message, Variant::Either);
 
                         if filters::is_excluded(&message) {
                             continue;
