@@ -5,9 +5,10 @@ use std::{
 };
 
 use anyhow::Context;
+use axum::http::StatusCode;
 use axum::{routing::get, Router};
 use lazy_static::lazy_static;
-use reqwest::{StatusCode, Url};
+use reqwest::Url;
 use tokio::sync::RwLock;
 
 use crate::metrics::generate_metrics;
