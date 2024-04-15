@@ -1,5 +1,5 @@
 [workspace]
-
+resolver = "2"
 members = [
     "rlog-grpc",
     "rlog-common",
@@ -10,54 +10,62 @@ members = [
 ]
 
 [workspace.dependencies]
-rlog-common = {path = "./rlog-common"}
-rlog-grpc = {path = "./rlog-grpc"}
-rlog-collector = {path="./rlog-collector"}
-rlog-shipper = {path="./rlog-shipper"}
+rlog-common = { path = "./rlog-common" }
+rlog-grpc = { path = "./rlog-grpc" }
+rlog-collector = { path = "./rlog-collector" }
+rlog-shipper = { path = "./rlog-shipper" }
 
-anyhow="1"
-thiserror="1"
-clap={version = "4", features = ["env", "derive"]}
-dotenv="0.15"
-serde={version="1", features=["derive"]}
-serde_json="1"
+anyhow = "1"
+thiserror = "1"
+clap = { version = "4", features = ["env", "derive"] }
+dotenv = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serde_yaml = "0.9"
 serde_regex = "1.1"
-humantime-serde="1.1"
-tokio={version="1", features=["macros", "rt-multi-thread", "sync", "time", "signal"]}
-tokio-util="0.7"
-tokio-stream="0.1"
-futures="0.3"
+humantime-serde = "1.1"
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "sync",
+    "time",
+    "signal",
+] }
+tokio-util = "0.7"
+tokio-stream = "0.1"
+futures = "0.3"
 bytes = "1"
 prost-wkt-types = "0.4.1"
-tonic={version="0.9", features=["tls", "gzip"] }
+tonic = { version = "0.9", features = ["tls", "gzip"] }
 prost = "0.11"
-tracing="0.1"
-lazy_static="^1.4"
-itertools="0.10"
-arc-swap="1.6"
-humantime="2.1"
-async-channel="1.8"
-tonic-build="0.9"
+tracing = "0.1"
+lazy_static = "^1.4"
+itertools = "0.10"
+arc-swap = "1.6"
+humantime = "2.1"
+async-channel = "1.8"
+tonic-build = "0.9"
 protobuf-src = "1.0.5+3.19.3"
-async-stream="0.3"
-regex="1"
-hostname="0.3"
-syslog_loose="0.18"
-prometheus={version="0.13", features=["process"]}
-axum="0.6"
-reqwest={version="0.11", default_features=false, features=["json", "rustls-tls"]}
-portpicker="0.1"
-chrono="0.4"
+async-stream = "0.3"
+regex = "1"
+hostname = "0.3"
+syslog_loose = "0.18"
+prometheus = { version = "0.13", features = ["process"] }
+axum = "0.6"
+reqwest = { version = "0.11", default_features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+portpicker = "0.1"
+chrono = "0.4"
 syslog = "^6.0"
-rand="0.8"
-rcgen = {version="0.10.0", features=["pem", "x509-parser"]}
-time="0.3"
+rand = "0.8"
+rcgen = { version = "0.13.0", features = ["pem", "x509-parser"] }
+time = "0.3"
 linemux = "0.3"
-tempfile="3"
-iso8601="0.6"
-num-traits="0.2"
+tempfile = "3"
+iso8601 = "0.6"
+num-traits = "0.2"
 
 [profile.release]
-lto="fat"
-
+lto = "fat"

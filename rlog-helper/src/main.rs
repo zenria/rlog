@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use rcgen::{Certificate, CertificateParams, DistinguishedName, DnType, KeyPair};
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair};
 use time::OffsetDateTime;
 
 #[derive(Parser)]
@@ -96,7 +96,6 @@ impl CertificateCommand {
                 params
                     .distinguished_name
                     .push(DnType::CommonName, common_name);
-                params.alg = &rcgen::PKCS_ECDSA_P384_SHA384;
                 params.not_before = OffsetDateTime::now_utc();
                 params.not_after = params.not_before
                     + humantime::parse_duration(&expires_in)
@@ -125,11 +124,11 @@ impl CertificateCommand {
                         .distinguished_name
                         .push(DnType::OrganizationalUnitName, organisation_unit);
                 }
-
-                let ca_cert = Certificate::from_params(params)?;
+                let key_pair = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P384_SHA384)?;
+                let ca_cert = params.self_signed(&key_pair)?;
 
                 {
-                    let pem_ca_key = ca_cert.serialize_private_key_pem();
+                    let pem_ca_key = key_pair.serialize_pem();
                     let key_file_name = ca_key_filename(&output_dir);
                     File::create(&key_file_name)
                         .with_context(|| format!("Unable to open file {key_file_name}"))?
@@ -137,7 +136,7 @@ impl CertificateCommand {
                     println!("CA private key written to {key_file_name}: \n{pem_ca_key}\n");
                 }
                 {
-                    let pem_ca_cert = ca_cert.serialize_pem()?;
+                    let pem_ca_cert = ca_cert.pem();
                     let cert_file_name = ca_cert_filename(&output_dir);
                     File::create(&cert_file_name)
                         .with_context(|| format!("Unable to open file {cert_file_name}"))?
@@ -150,25 +149,29 @@ impl CertificateCommand {
                 alt_dns_hostname,
                 hostname,
             } => {
-                let ca_certificate =
+                let (ca_certificate_params, ca_key_pair) =
                     parse_ca_certificate(&output_dir).context("Unable to load CA certificates")?;
+
+                // Why I'm forced to do this?
+                let ca_certificate = ca_certificate_params.self_signed(&ca_key_pair)?;
 
                 let mut subject_alt_name = Vec::new();
                 subject_alt_name.push(hostname.clone());
                 subject_alt_name.extend(alt_dns_hostname.iter().cloned());
 
-                let mut params = CertificateParams::new(subject_alt_name);
+                let mut params = CertificateParams::new(subject_alt_name)?;
+
                 params.distinguished_name = DistinguishedName::new();
                 params.distinguished_name.push(DnType::CommonName, hostname);
-                params.alg = &rcgen::PKCS_ECDSA_P384_SHA384;
                 params.not_before = OffsetDateTime::now_utc();
                 params.not_after = params.not_before
                     + humantime::parse_duration(&expires_in)
                         .context("Unable to parse expires-in argument")?;
 
-                let cert = Certificate::from_params(params)?;
+                let key_pair = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P384_SHA384)?;
+                let cert = params.signed_by(&key_pair, &ca_certificate, &ca_key_pair)?;
                 {
-                    let key = cert.serialize_private_key_pem();
+                    let key = key_pair.serialize_pem();
                     let key_file_name = format!("{output_dir}/{hostname}.priv-key.pem");
                     File::create(&key_file_name)
                         .with_context(|| format!("Unable to open file {key_file_name}"))?
@@ -176,7 +179,7 @@ impl CertificateCommand {
                     println!("{hostname} server private key written to {key_file_name}: \n{key}\n");
                 }
                 {
-                    let pem = cert.serialize_pem_with_signer(&ca_certificate)?;
+                    let pem = cert.pem();
                     let cert_file_name = format!("{output_dir}/{hostname}.pem");
                     File::create(&cert_file_name)
                         .with_context(|| format!("Unable to open file {cert_file_name}"))?
@@ -191,36 +194,48 @@ impl CertificateCommand {
                 client_name,
                 new_private_key,
             } => {
-                let ca_certificate =
+                let (ca_certificate_params, ca_key_pair) =
                     parse_ca_certificate(&output_dir).context("Unable to load CA certificates")?;
+
+                // Why I'm forced to do this?
+                let ca_certificate = ca_certificate_params.self_signed(&ca_key_pair)?;
 
                 let mut params = CertificateParams::default();
                 params.distinguished_name = DistinguishedName::new();
                 params
                     .distinguished_name
                     .push(DnType::CommonName, client_name);
-                params.alg = &rcgen::PKCS_ECDSA_P384_SHA384;
                 params.not_before = OffsetDateTime::now_utc();
                 params.not_after = params.not_before
                     + humantime::parse_duration(&expires_in)
                         .context("Unable to parse expires-in argument")?;
 
                 let key_file_name = format!("{output_dir}/{client_name}.priv-key.pem");
-                let mut private_key_not_generated = false;
-                if !new_private_key {
+                let (key_pair, private_key_not_generated) = if *new_private_key {
+                    (
+                        KeyPair::generate_for(&rcgen::PKCS_ECDSA_P384_SHA384)?,
+                        false,
+                    )
+                } else {
                     // ignore errors: if any error occurs reading private key PEM
                     // (inexistent file, file corrupt), a new private key will be generated
-                    params.key_pair = load_keypair(&key_file_name).ok();
-                    private_key_not_generated = params.key_pair.is_some();
-                }
+                    if let Some(key_pair) = load_keypair(&key_file_name).ok() {
+                        (key_pair, true)
+                    } else {
+                        (
+                            KeyPair::generate_for(&rcgen::PKCS_ECDSA_P384_SHA384)?,
+                            false,
+                        )
+                    }
+                };
 
-                let cert = Certificate::from_params(params)?;
+                let cert = params.signed_by(&key_pair, &ca_certificate, &ca_key_pair)?;
                 if private_key_not_generated {
                     println!(
                         "{client_name} existing client private key used for certificate generation"
                     );
                 } else {
-                    let key = cert.serialize_private_key_pem();
+                    let key = key_pair.serialize_pem();
                     File::create(&key_file_name)
                         .with_context(|| format!("Unable to open file {key_file_name}"))?
                         .write_all(key.as_bytes())?;
@@ -229,7 +244,7 @@ impl CertificateCommand {
                     );
                 }
                 {
-                    let pem = cert.serialize_pem_with_signer(&ca_certificate)?;
+                    let pem = cert.pem();
                     let cert_file_name = format!("{output_dir}/{client_name}.pem");
                     File::create(&cert_file_name)
                         .with_context(|| format!("Unable to open file {cert_file_name}"))?
@@ -262,7 +277,7 @@ fn load_keypair<P: AsRef<Path>>(path: P) -> anyhow::Result<KeyPair> {
     .context("Unable to parse private key PEM")?)
 }
 
-fn parse_ca_certificate(output_dir: &str) -> anyhow::Result<Certificate> {
+fn parse_ca_certificate(output_dir: &str) -> anyhow::Result<(CertificateParams, KeyPair)> {
     let ca_key_file_name = ca_key_filename(&output_dir);
     let mut ca_priv_pem = String::new();
     File::open(&ca_key_file_name)
@@ -275,8 +290,9 @@ fn parse_ca_certificate(output_dir: &str) -> anyhow::Result<Certificate> {
     File::open(&ca_file_name)
         .with_context(|| format!("Unable to open CA cetificate from {ca_file_name}"))?
         .read_to_string(&mut ca_pem)?;
-    let params = CertificateParams::from_ca_cert_pem(&ca_pem, ca_keypair)?;
-    Ok(Certificate::from_params(params)?)
+    let params = CertificateParams::from_ca_cert_pem(&ca_pem)?;
+
+    Ok((params, ca_keypair))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
